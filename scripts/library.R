@@ -1,28 +1,39 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
+# setup  
   here,
-  osmdata,
   tidyverse,
+# data preparation
   labelled,
-  readxl,
+  readxl,  
+  visdat,
+  data.table, # data wrangling
+  janitor,
+  forcats,
+  gtsummary, 
+  GGally,
+  skimr,
+  units,
+# network data
+  tidygraph,
+  igraph,
+  shp2graph, # switch between sp and igraph objects
+  rgrass7, # ‘bridge’ to GRASS GIS
+  link2GI, # ‘bridge’ to GRASS GIS
+# spatial
+  osmdata, # import data from OpenStreetMap
   terra, # handle raster data
   tidyterra,
   raster, # handle raster data
   exactextractr, # fast extractions
   sf, # vector data operations
-  data.table, # data wrangling
   tmap, # mapping
   leaflet, # interactive mapping
-  colorspace,
+  spatstat,
+  stplanr, # contains the SpatialLinesNetwork class, which works with both  sp and sf objects.
+# survey data
   survey,
   srvyr,
-  convey,
-  haven,
-  skimr,
-  visdat,
-  janitor,
-  forcats,
-  spatstat,
-  gtsummary, 
-  GGally
+  convey
 )
+
