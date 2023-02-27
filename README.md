@@ -1,5 +1,3 @@
-# Analysis of the indirect impacts of the road network on food security in Niger
-
 # Data sources
 
 - Niger - Subnational Administrative Boundaries: https://data.humdata.org/dataset/cod-ab-ner
