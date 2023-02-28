@@ -31,6 +31,7 @@ pacman::p_load(
   leaflet, # interactive mapping
   spatstat,
   stplanr, # contains the SpatialLinesNetwork class, which works with both  sp and sf objects.
+  qgisprocess,
 # survey data
   survey,
   srvyr,

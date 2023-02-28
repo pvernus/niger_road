@@ -19,6 +19,26 @@ plot(lines)
 
 ggplot(data = lines) + geom_sf()
 
+qgis_run_algorithm(
+  "grass7:v.clean", # qgis_show_help("grass7:v.clean")
+  input = lines, # Path to a vector layer to clean
+  output = "data/lines_clean.shp",
+  error = "data/line_errors.shp",
+  type = 1,
+  tool = 0, # break
+  `-c` = 1
+)
+
+lines_clean <- st_read("data/lines_clean.shp")
+plot(lines_clean)
+
+
+
+qgis_argument_spec("grass7:v.clean")
+qgis_show_help("grass7:v.clean")
+
+
+
 
 # clean network
 v_clean(lines)
@@ -28,4 +48,4 @@ graph <- sf_to_tidygraph(lines)
 
 
 # save raw data
-save(graph, file = ".RData")
+save(polygons, lines, graph, file = "network_clean.RData")

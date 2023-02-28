@@ -27,6 +27,21 @@ lines <- readVECT('vect_cleaned') %>%
 
 }
 
+
+
+
+
+
+
+
+  colnames()
+
+
+  
+  
+  
+  distinct(provider)
+
 ## sf_to_tidygraph: takes a cleaned sf object with LINESTRING geometries as input, and returns a spatial tbl_graph
 
 sf_to_tidygraph = function(x, directed = FALSE) {
