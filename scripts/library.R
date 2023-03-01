@@ -20,6 +20,8 @@ pacman::p_load(
   shp2graph, # switch between sp and igraph objects
   rgrass7, # ‘bridge’ to GRASS GIS
   link2GI, # ‘bridge’ to GRASS GIS
+  dbscan,
+  spNetwork,
 # spatial
   osmdata, # import data from OpenStreetMap
   terra, # handle raster data
