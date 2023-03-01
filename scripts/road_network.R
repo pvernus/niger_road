@@ -5,6 +5,15 @@ source("R/functions.R") # load functions
 polygons <- st_read("data_raw/hotosm_niger_roads_polygons_shp/hotosm_niger_roads_polygons.shp")
 lines <- st_read("data_raw/hotosm_niger_roads_lines_shp/hotosm_niger_roads_lines.shp")
 
+
+# OR get the data directly from OSM with the osmdata package
+bb <- getbb ('niger', format_out = 'polygon')
+x <- opq(bbox = bb) %>% 
+  add_osm_feature(key = 'highway', value = 'unclassified') %>%
+  osmdata_sf () %>%
+  trim_osmdata (bb)
+plot(x$osm_lines)
+
 #head(polygons)
 #head(lines)
 
@@ -94,11 +103,6 @@ road_type_ranking <- graph %>%
   summarise(length = sum(length)) %>% 
   arrange(desc(length))
 
-# plot the network
-ggplot() +
-  geom_sf(data = small_graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()) + 
-  geom_sf(data = small_graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), size = 0.5)
-
 # save raw data
 save(polygons, lines, lines_clean, edges, nodes, small_graph, small_edges, graph, file = "data/network.RData")
 
@@ -107,22 +111,7 @@ save(polygons, lines, lines_clean, edges, nodes, small_graph, small_edges, graph
 # plot the network as an interactive map
 tmap_mode('view')
 
-tm_shape(small_graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()) +
+tm_shape(small_graph %>% activate(edges) %>% as_tibble() %>% st_as_sf() %>% 
+           filter(highway == "primary" | highway == "secondary")) +
   tm_lines() +
-  tm_shape(small_graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf()) +
-  tm_dots() +
   tmap_options(basemaps = 'OpenStreetMap')
-
-# centrality measures
-small_graph <- small_graph %>%
-  activate(nodes) %>%
-  mutate(degree = centrality_degree()) %>%
-  mutate(betweenness = centrality_betweenness(weights = length)) %>%
-  activate(edges) %>%
-  mutate(betweenness = centrality_edge_betweenness(weights = length))
-
-ggplot() +
-  geom_sf(data = small_graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), aes(col = betweenness, size = betweenness)) +
-  scale_colour_viridis_c(option = 'inferno') +
-  scale_size_continuous(range = c(0,4))
-

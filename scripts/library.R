@@ -1,3 +1,5 @@
+remotes::install_github("paleolimbot/qgisprocess")
+
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
 # setup  
@@ -9,6 +11,8 @@ pacman::p_load(
   visdat,
   data.table, # data wrangling
   janitor,
+  snakecase,
+  fuzzyjoin,
   forcats,
   gtsummary, 
   GGally,
@@ -30,6 +34,7 @@ pacman::p_load(
   exactextractr, # fast extractions
   sf, # vector data operations
   tmap, # mapping
+  mapview,
   leaflet, # interactive mapping
   spatstat,
   stplanr, # contains the SpatialLinesNetwork class, which works with both  sp and sf objects.
