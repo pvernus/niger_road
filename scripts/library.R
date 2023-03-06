@@ -1,4 +1,5 @@
 remotes::install_github("paleolimbot/qgisprocess")
+devtools::install_github("r-barnes/dggridR", vignette=TRUE)
 
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
@@ -26,6 +27,7 @@ pacman::p_load(
   link2GI, # ‘bridge’ to GRASS GIS
   dbscan,
   spNetwork,
+  sfnetworks,
 # spatial
   osmdata, # import data from OpenStreetMap
   terra, # handle raster data
@@ -39,9 +41,13 @@ pacman::p_load(
   spatstat,
   stplanr, # contains the SpatialLinesNetwork class, which works with both  sp and sf objects.
   qgisprocess,
+  RColorBrewer,
+  dggridR,
+  s2,
 # survey data
   survey,
   srvyr,
   convey
 )
+vignette('dggridR')
 

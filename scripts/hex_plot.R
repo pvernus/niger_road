@@ -1,37 +1,3 @@
-load("data/adm03.RData")
-load("data/adm3_pop.RData")
-load("data/settlements.RData")
-
-# create new key variable to join the datasets at the admin3 level based on postcodes
-# Administrative level 3 boundaries
-adm03 <- adm03 %>% 
-  mutate(id_adm1 = rowcacode1,
-         id_adm2 = rowcacode2,
-         id_adm3 = rowcacode3
-         )
-# Population 
-adm3_pop <- adm3_pop %>% 
-  mutate(id_adm1 = adm1_pcode,
-         id_adm2 = adm2_pcode,
-         id_adm3 = adm3_pcode
-  )
-# Settlements 
-settlements <- settlements %>% 
-  mutate(id_adm3 = admin3pcode)
-
-setdiff(adm03$id_adm3, settlements$id_adm3)
-setdiff(adm03$id_adm3, adm3_pop$id_adm3)
-setdiff(adm3_pop$id_adm3, settlements$id_adm3)
-# Two adm3 are missing in the settlements database: 
-# "NER005007001" : Azarori, Niger
-# "NER001003004" : Fachi, Niger
-
-# Join administrative boundaries and population (polygons)
-population_admin <- adm03 %>%
-  left_join(adm3_pop, by = c("id_adm3", "id_adm2", "id_adm1"))
-
-save(population_admin, file = "data/population_admin.RData")
-
 sub_settlements <- dplyr::filter(settlements, grepl("NER00700", id_adm3)) %>% 
   select(geometry = geom) %>% 
   st_sf()

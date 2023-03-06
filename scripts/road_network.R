@@ -103,6 +103,12 @@ road_type_ranking <- graph %>%
   summarise(length = sum(length)) %>% 
   arrange(desc(length))
 
+# simplify network
+# Round coordinates to 4 digits
+st_geometry(small_edges) = st_geometry(small_edges) %>%
+  lapply(function(x) round(x, 4)) %>%
+  st_sfc(crs = st_crs(small_edges))
+
 # save raw data
 save(polygons, lines, lines_clean, edges, nodes, small_graph, small_edges, graph, file = "data/network.RData")
 
@@ -111,7 +117,6 @@ save(polygons, lines, lines_clean, edges, nodes, small_graph, small_edges, graph
 # plot the network as an interactive map
 tmap_mode('view')
 
-tm_shape(small_graph %>% activate(edges) %>% as_tibble() %>% st_as_sf() %>% 
-           filter(highway == "primary" | highway == "secondary")) +
+tm_shape(small_graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()) +
   tm_lines() +
   tmap_options(basemaps = 'OpenStreetMap')
