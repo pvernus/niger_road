@@ -1,11 +1,12 @@
-remotes::install_github("paleolimbot/qgisprocess")
-devtools::install_github("r-barnes/dggridR", vignette=TRUE)
+if (!require("qgisprocess")) remotes::install_github("paleolimbot/qgisprocess")
+if (!require("qgisprocess")) devtools::install_github("r-barnes/dggridR", vignette=TRUE)
 
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
 # setup  
   here,
   tidyverse,
+  DBI,
 # data preparation
   labelled,
   readxl,  
@@ -47,7 +48,9 @@ pacman::p_load(
 # survey data
   survey,
   srvyr,
-  convey
+  convey,
+  vardpoor,
+  laeken,
+  questionr
 )
-vignette('dggridR')
 

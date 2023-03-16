@@ -7,12 +7,12 @@ lines <- st_read("data_raw/hotosm_niger_roads_lines_shp/hotosm_niger_roads_lines
 
 
 # OR get the data directly from OSM with the osmdata package
-bb <- getbb ('niger', format_out = 'polygon')
-x <- opq(bbox = bb) %>% 
-  add_osm_feature(key = 'highway', value = 'unclassified') %>%
-  osmdata_sf () %>%
-  trim_osmdata (bb)
-plot(x$osm_lines)
+# bb <- getbb ('niger', format_out = 'polygon')
+# x <- opq(bbox = bb) %>% 
+# add_osm_feature(key = 'highway', value = 'unclassified') %>%
+#  osmdata_sf () %>%
+#  trim_osmdata (bb)
+# plot(x$osm_lines)
 
 #head(polygons)
 #head(lines)
@@ -84,7 +84,8 @@ graph <- tbl_graph(nodes = nodes, edges = as_tibble(edges), directed = FALSE)
 # create a smaller graph without non-relevant road types
 road_type_rm <- c("cycleway", "escape", "living_street", "raceway", "residential", "service", "services", "steps")
 small_edges <- edges %>% 
-  filter(!highway %in% road_type_rm)
+  filter(!highway %in% road_type_rm) %>% 
+  st_cast("LINESTRING")
 small_graph <- tbl_graph(nodes = nodes, edges = as_tibble(small_edges), directed = FALSE)
 
 # create new length variable for edges
@@ -103,11 +104,7 @@ road_type_ranking <- graph %>%
   summarise(length = sum(length)) %>% 
   arrange(desc(length))
 
-# simplify network
-# Round coordinates to 4 digits
-st_geometry(small_edges) = st_geometry(small_edges) %>%
-  lapply(function(x) round(x, 4)) %>%
-  st_sfc(crs = st_crs(small_edges))
+
 
 # save raw data
 save(polygons, lines, lines_clean, edges, nodes, small_graph, small_edges, graph, file = "data/network.RData")
