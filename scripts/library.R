@@ -20,6 +20,11 @@ pacman::p_load(
   GGally,
   skimr,
   units,
+  caret,
+  biscale,
+  cowplot,
+  plotly,
+  datawizard,
 # network data
   tidygraph,
   igraph,
@@ -45,6 +50,8 @@ pacman::p_load(
   RColorBrewer,
   dggridR,
   s2,
+  rgrass,
+  ggspatial,
 # survey data
   survey,
   srvyr,

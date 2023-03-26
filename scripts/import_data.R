@@ -13,6 +13,16 @@ adm03 <- ner_adm03_feb2018 %>%
          id_adm3 = rowcacode3
   )
 
+ner_adm02_feb2018 <- st_read("data_raw/ner_adm03_feb2018/NER_adm03_feb2018.shp")
+ner_adm02_feb2018 <- st_make_valid(ner_adm02_feb2018)
+adm02 <- ner_adm02_feb2018 %>% 
+  clean_names() %>% 
+  select(-c(objectid, iso3, iso2)) %>% # remove unnecessary variables
+  mutate(id_adm1 = rowcacode1, # create primary key
+         id_adm2 = rowcacode2 # create foreign keys
+  ) %>% 
+  relocate(starts_with("id_"), .before = rowcacode1)
+  
 regions <- adm03 %>% 
   select(adm_01, id_adm1) %>% 
   st_drop_geometry() %>% distinct()
@@ -29,7 +39,13 @@ pop <- ner_admpop_adm3_2022 %>%
   mutate(id_adm1 = adm1_pcode, # create primary key
          id_adm2 = adm2_pcode, # create foreign keys
          id_adm3 = adm3_pcode
-  )
+  ) %>% 
+  relocate(starts_with("id_"), .before = "f_tl")
+
+pop_sf <- pop %>% 
+  inner_join(adm03 %>% select(adm_03, id_adm3, geometry), by = "id_adm3") %>% 
+  st_as_sf()
+
 
 # Settlements
 localites <- st_read("data_raw/ner_localites-21-10/Localités 21-10/Localites.gpkg", layer = "REACH_Localites")
@@ -71,8 +87,9 @@ source("scripts/hh_survey.R")
 
 # A. save as RData
 save(ner_adm03_feb2018, adm03, 
+     ner_adm02_feb2018, adm02,
      regions, departements,
-     ner_admpop_adm3_2022, pop, 
+     ner_admpop_adm3_2022, pop, pop_sf,
      localites, settlements,
      cadre_harmonise_caf_ipc, ipc,
      survey_ind, survey_menage, survey_welfare, survey_desgn,

@@ -1,102 +1,50 @@
 source("scripts/library.R") # load packages
 source("R/functions.R") # load functions
 
+# load("data/network.RData")
+
 # import polygons and lines as sf objects
 polygons <- st_read("data_raw/hotosm_niger_roads_polygons_shp/hotosm_niger_roads_polygons.shp")
-lines <- st_read("data_raw/hotosm_niger_roads_lines_shp/hotosm_niger_roads_lines.shp")
-
+lines <- st_read("data_raw/hotosm_niger_roads_lines_shp/hotosm_niger_roads_lines.shp") %>% 
+  select(osm_id, highway, geometry) %>% 
+  filter(highway %in% c('trunk', 'primary', 'secondary', 'tertiary', 
+                        'trunk_link', 'secondary_link', 'tertiary_link'))
 
 # OR get the data directly from OSM with the osmdata package
-# bb <- getbb ('niger', format_out = 'polygon')
-# x <- opq(bbox = bb) %>% 
-# add_osm_feature(key = 'highway', value = 'unclassified') %>%
-#  osmdata_sf () %>%
-#  trim_osmdata (bb)
-# plot(x$osm_lines)
+bb <- getbb('niger', format_out = 'polygon')
+ner_highway <- opq(bbox = bb) %>% 
+  add_osm_feature(key = 'highway') %>% 
+  osmdata_sf() %>% 
+  osm_poly2line() %>% # convert osmdata polygons into lines
+  unique_osmdata()
 
-#head(polygons)
-#head(lines)
-
-#plot(st_geometry(polygons[1, ]))
-#plot(st_geometry(lines[1, ]))
-
-#st_crs(polygons)
-#st_crs(lines)
-
-#plot(polygons)
-#plot(lines)
-
-# Clean the edges list with the GRASS's v.clean function via QGIS plugin
+# Step 1: clean the edges list with the GRASS's v.clean function via QGIS plugin
 qgis_run_algorithm(
-  "grass7:v.clean", # qgis_show_help("grass7:v.clean")
+"grass7:v.clean", # qgis_show_help("grass7:v.clean")
   input = lines, # Path to a vector layer to clean
   output = "data/lines_clean.shp",
   error = "data/line_errors.shp",
   type = 1,
   tool = 0, # break
-  `-c` = 1
-)
-# open the new (clean) file in R
-lines_clean <- st_read("data/lines_clean.shp") %>% 
-  st_make_valid() %>% 
-  select(c(osm_id, highway, geometry))
+  `-c` = 1)
+lines_clean <- st_read("data/lines_clean.shp")
 
-#table(lines_clean$highway)
+# Step 2: cleaned sf object with LINESTRING geometries as input, and returns a spatial tbl_graph.
+ner_graph <-  sf_to_tidygraph(lines_clean, directed = FALSE)
 
-# give each edge a unique index
-edges <- lines_clean %>%
-  mutate(edgeID = c(1:n()))
-# create nodes at the start and end point of each edge
-nodes <- edges %>%
-  st_coordinates() %>%
-  as_tibble() %>%
-  select(-L1) %>% 
-  rename(edgeID = L2) %>%
-  group_by(edgeID) %>%
-  slice(c(1, n())) %>%
-  ungroup() %>%
-  mutate(start_end = rep(c('start', 'end'), times = n()/2))
-# give each node a unique index
-nodes <- nodes %>%
-  mutate(xy = paste(.$X, .$Y)) %>% 
-  mutate(nodeID = group_indices(., factor(xy, levels = unique(xy)))) %>%
-  select(-xy)
-# combine the node indices with the edges
-source_nodes <- nodes %>%
-  filter(start_end == 'start') %>%
-  pull(nodeID)
+ner_graph <- ner_graph %>% 
+  activate("edges") %>%
+  filter(!edge_is_multiple()) %>% # filter out edges with parallel siblings
+  filter(!edge_is_loop()) # filter out edges which are loops
 
-target_nodes <- nodes %>%
-  filter(start_end == 'end') %>%
-  pull(nodeID)
+# Step 3: create new length variable for edges
+ner_graph <- ner_graph %>%
+  activate(edges) %>% # specify if we want to manipulate the edges/nodes
+  mutate(length = st_length(geometry)) # add a variable describing the length of each edge (cf. weight)
+ner_graph
 
-edges = edges %>%
-  mutate(from = source_nodes, to = target_nodes)
-# remove duplicate nodes
-nodes <- nodes %>%
-  distinct(nodeID, .keep_all = TRUE) %>%
-  select(-c(edgeID, start_end)) %>%
-  st_as_sf(coords = c('X', 'Y')) %>%
-  st_set_crs(st_crs(edges))
-# convert to tbl_graph
-graph <- tbl_graph(nodes = nodes, edges = as_tibble(edges), directed = FALSE)
-
-# create a smaller graph without non-relevant road types
-road_type_rm <- c("cycleway", "escape", "living_street", "raceway", "residential", "service", "services", "steps")
-small_edges <- edges %>% 
-  filter(!highway %in% road_type_rm) %>% 
-  st_cast("LINESTRING")
-small_graph <- tbl_graph(nodes = nodes, edges = as_tibble(small_edges), directed = FALSE)
-
-# create new length variable for edges
-graph <- graph %>%
-  activate(edges) %>% # specify if we want to manipulate the edges or the nodes
-  mutate(length = st_length(geometry))
-small_graph <- small_graph %>%
-  activate(edges) %>%
-  mutate(length = st_length(geometry))
-
-road_type_ranking <- graph %>%
+# length by type of highway
+ner_graph %>%
   activate(edges) %>%
   as_tibble() %>%
   st_as_sf() %>%
@@ -104,16 +52,53 @@ road_type_ranking <- graph %>%
   summarise(length = sum(length)) %>% 
   arrange(desc(length))
 
+# Centrality measures
+# source: https://igraph.org/r/doc/betweenness.html
 
+graph <- ner_graph %>%
+  activate(nodes) %>%
+  mutate(degree = centrality_degree(),
+         betweenness = centrality_betweenness(weights = length, normalized = TRUE)) %>%
+  activate(edges) %>%
+  mutate(centrality_edge_betweenness = centrality_edge_betweenness(weights = length))
+
+ggplot() +
+  geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), col = 'grey50') + 
+  geom_sf(data = graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), aes(col = betweenness, size = betweenness)) +
+  scale_colour_viridis_c(option = 'inferno') +
+  scale_size_continuous(range = c(0,4))
+
+
+nodes_trim <- nodes_ner %>% 
+  filter(!degree == 2)
+
+
+tmap_mode("view")
+
+tm_shape(pop_sf) +
+  tm_polygons("t_tl", palette = "Blues", n = 4, alpha = .5, title = "Population") +
+tm_shape(ipc_2020_adm2) + 
+  tm_polygons("median", palette = "YlOrRd",  alpha = .5, id = "adm2_name") +
+tm_shape(lines_ner) +
+  tm_lines("centrality_edge_betweenness", palette = "Reds", lwd = 3,
+           group = "Roads") +
+tm_shape(nodes_trim) +
+  tm_bubbles(col = "betweenness", palette = "Reds", alpha = .5, scale = .1,
+             group = "Roads") +
+tm_scale_bar() +
+tm_minimap()
+
+
+
+
+
+
+lines_ner <- graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()
+st_write(lines_ner, "data/lines_ner.shp")
+# st_read("data/lines_ner.shp")
+nodes_ner <- graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf()
+st_write(nodes_ner, "data/nodes_ner.shp")
+# st_read("data/nodes_ner.shp")
 
 # save raw data
-save(polygons, lines, lines_clean, edges, nodes, small_graph, small_edges, graph, file = "data/network.RData")
-
-### TO-DO ###
-
-# plot the network as an interactive map
-tmap_mode('view')
-
-tm_shape(small_graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()) +
-  tm_lines() +
-  tmap_options(basemaps = 'OpenStreetMap')
+save(polygons, lines, lines_clean, lines_ner, nodes_ner, ner_graph, graph, file = "data/network.RData")
