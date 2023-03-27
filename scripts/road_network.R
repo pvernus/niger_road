@@ -58,9 +58,11 @@ ner_graph %>%
 graph <- ner_graph %>%
   activate(nodes) %>%
   mutate(degree = centrality_degree(),
-         betweenness = centrality_betweenness(weights = length, normalized = TRUE)) %>%
+         betweenness_l = centrality_betweenness(weight = length, normalized = TRUE),
+         betweenness = centrality_betweenness(normalized = TRUE)) %>%
   activate(edges) %>%
-  mutate(centrality_edge_betweenness = centrality_edge_betweenness(weights = length))
+  mutate(edge_betweenness_l = centrality_edge_betweenness(weight = length), 
+         edge_betweenness = centrality_edge_betweenness())
 
 ggplot() +
   geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), col = 'grey50') + 
@@ -68,6 +70,12 @@ ggplot() +
   scale_colour_viridis_c(option = 'inferno') +
   scale_size_continuous(range = c(0,4))
 
+lines_ner <- graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()
+st_write(lines_ner, "data/lines_ner.shp")
+# st_read("data/lines_ner.shp")
+nodes_ner <- graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf()
+st_write(nodes_ner, "data/nodes_ner.shp")
+# st_read("data/nodes_ner.shp")
 
 nodes_trim <- nodes_ner %>% 
   filter(!degree == 2)
@@ -76,29 +84,28 @@ nodes_trim <- nodes_ner %>%
 tmap_mode("view")
 
 tm_shape(pop_sf) +
-  tm_polygons("t_tl", palette = "Blues", n = 4, alpha = .5, title = "Population") +
-tm_shape(ipc_2020_adm2) + 
-  tm_polygons("median", palette = "YlOrRd",  alpha = .5, id = "adm2_name") +
-tm_shape(lines_ner) +
-  tm_lines("centrality_edge_betweenness", palette = "Reds", lwd = 3,
+  tm_polygons("t_tl", palette = "Blues", n = 4, alpha = .5, title = "Population", group = "Population") +
+  tm_shape(ipc_2020_adm2) + 
+  tm_polygons("median", palette = "YlOrRd",  alpha = .5, id = "adm2_name", group = "Food Security") +
+  tm_shape(lines_ner) +
+  tm_lines("edge_betweenness", palette = "YlOrRd", lwd = 3, 
            group = "Roads") +
-tm_shape(nodes_trim) +
-  tm_bubbles(col = "betweenness", palette = "Reds", alpha = .5, scale = .1,
+  tm_shape(lines_ner) +
+  tm_lines("edge_betweenness_l", palette = "YlOrRd", lwd = 3, 
+           group = "Roads (weighted)") +
+  tm_shape(lines_ner) +
+  tm_lines("highway", lwd = 3, group = "Type") +
+  tm_shape(nodes_trim) +
+  tm_bubbles(col = "betweenness", palette = "YlOrRd", alpha = .5, scale = .1,
              group = "Roads") +
-tm_scale_bar() +
-tm_minimap()
+  tm_shape(nodes_trim) +
+  tm_bubbles(col = "betweenness_l", palette = "YlOrRd", alpha = .5, scale = .1,
+             group = "Roads (weighted)") +
+  tm_shape(adm03) +
+  tm_borders() +
+  tm_scale_bar() +
+  tm_minimap()
 
-
-
-
-
-
-lines_ner <- graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()
-st_write(lines_ner, "data/lines_ner.shp")
-# st_read("data/lines_ner.shp")
-nodes_ner <- graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf()
-st_write(nodes_ner, "data/nodes_ner.shp")
-# st_read("data/nodes_ner.shp")
 
 # save raw data
 save(polygons, lines, lines_clean, lines_ner, nodes_ner, ner_graph, graph, file = "data/network.RData")

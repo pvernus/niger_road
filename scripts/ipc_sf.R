@@ -1,5 +1,6 @@
 # load("data/data.RData")
 # load("data/ipc_sf.RData")
+# load("data/grid3_pop.RData")
 
 ipc_sf <- ipc %>% 
   select(id_adm1, adm1_name, id_adm2, adm2_name, exercise_code:phase2, phase35) %>% 
@@ -59,11 +60,17 @@ fig <- df %>% subplot(nrows = 2)
 fig
 
 
-ggplot(data_trends, aes(x = exercise_year)) +
-  geom_ribbon(aes(ymin = min, ymax = max), fill = "grey70") +
-  geom_line(aes(y = median)) +
+data_trends |> 
+  filter(exercise_year > 2017) |> 
+ggplot(aes(x = exercise_year)) +
+  geom_ribbon(aes(ymin = min, ymax = max), fill = "honeydew2") +
+  geom_line(aes(y = median), colour = "springgreen3") +
   theme_minimal() +
-  facet_wrap(~adm1_name)
+  theme(plot.title = element_text(face="bold")) +
+  facet_wrap(~adm1_name, nrow = 3) +
+  labs(title = "Median, Max. and Min. % of population in Phase 3-5 in Niger, 2016-2022",
+       caption = "source: Integrated Food Security Phase Classification (IPC)", 
+       x = "Year", y = "% of population per ADM2")
 
 
 
@@ -152,16 +159,8 @@ ggdraw() +
 
 
 
-
-
-ipc_lines <- lines %>% 
-  st_join(ipc_2022_adm2)
-
-
-
-
 ggplot() +
-  geom_sf(data = ipc_2022_adm2, aes(fill = median), alpha = .3) +
+  geom_sf(data = ipc_2020_adm2, aes(fill = median), alpha = .3) +
   scale_fill_gradientn(colours = terrain.colors(10)) +
   geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), col = 'grey50') + 
   geom_sf(data = graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), aes(col = betweenness, size = betweenness)) +
@@ -175,4 +174,9 @@ ggplot() +
   theme_bw()
 
 
-save(ipc, ipc_sf, file = "data/ipc_sf.RData")
+
+
+
+
+
+save(ipc, ipc_sf, ipc_2020_adm2, file = "data/ipc_sf.RData")

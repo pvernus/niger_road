@@ -1,0 +1,137 @@
+---
+title:  |
+  | GCA
+  | Research for Impact
+subtitle: "WBG Niger Climate-Resilient inter-urban Connectivity Project"
+date: "March 28th, 2023"
+format: 
+  revealjs:
+    logo: "R/gca_logo_blue_rgb.png"
+    footer: "Global Center on Adaptation"
+    fontsize: 10px
+    fontcolor: rgb(11, 95, 186)
+    mainfont: "Roboto"
+    echo: false
+    slide-number: true
+---
+
+## Data
+
+::: {style="font-size: 0.8em"}
+-   **Population**
+
+    -   Subnational (ADM1-3) population
+    -   Settlements and density (GRID3)
+
+-   **Roads & facilities (e.g., markets)**
+
+    -   OpenStreetMaps
+
+-   **Food security**
+
+    -   Cadre Harmonisé (CH) & Integrated Phase Classification (IPC)
+    -   Niger - Enquête Harmonisée sur le Conditions de Vie des Ménages 2018-2019 (World Bank)
+
+-   **Climate/weather and Land use**
+-   *Local trade, prices, production, etc. ? (edge weights)*
+:::
+
+## Preliminary data layering
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(tmap)
+library(mapview)
+
+load("data/20230328_presentation")
+```
+
+::: panel-tabset
+
+## Population
+
+```{r}
+tmap_mode("view")
+
+tm_shape(pop_sf) +
+  tm_polygons("t_tl", palette = "Blues", n = 4, alpha = .5, title = "Population", group = "Population") +
+  tm_shape(adm03) +
+  tm_borders() +
+  tm_scale_bar() +
+  tm_minimap()
+```
+
+## Food security
+
+```{r}
+tmap_mode("view")
+
+tm_shape(ipc_2020_adm2) +  
+ tm_polygons("median", palette = "YlOrRd",  alpha = .5, id = "adm2_name", title = "Median % of pop. in IPC Phase 3-5", group = "Food Security") +
+tm_shape(adm03) +
+  tm_borders() +
+tm_scale_bar() +
+tm_minimap()
+```
+
+## Road network
+
+```{r}
+tmap_mode("view")
+
+tm_shape(lines_ner) +
+  tm_lines("edge_betweenness", palette = "YlOrRd", lwd = 3, 
+           group = "Roads") +
+tm_shape(lines_ner) +
+  tm_lines("edge_betweenness_l", palette = "YlOrRd", lwd = 3, 
+           group = "Roads (weighted)") +
+tm_shape(lines_ner) +
+  tm_lines("highway", lwd = 3, group = "Type") +
+tm_shape(nodes_trim) +
+  tm_bubbles(col = "betweenness", palette = "YlOrRd", alpha = .5, scale = .1,
+             group = "Roads") +
+tm_shape(nodes_trim) +
+  tm_bubbles(col = "betweenness_l", palette = "YlOrRd", alpha = .5, scale = .1,
+             group = "Roads (weighted)") +
+tm_shape(adm03) +
+  tm_borders() +
+tm_scale_bar() +
+tm_minimap()
+```
+:::
+
+## Food security trends
+
+```{r}
+data_trends |> 
+  filter(exercise_year > 2017) |> 
+ggplot(aes(x = exercise_year)) +
+  geom_ribbon(aes(ymin = min, ymax = max), fill = "honeydew2") +
+  geom_line(aes(y = median), colour = "springgreen3") +
+  theme_minimal() +
+  theme(plot.title = element_text(face="bold")) +
+  facet_wrap(~adm1_name, nrow = 3) +
+  labs(title = "Median, Max. and Min. % of population in Phase 3-5 by region, 2018-2022",
+       caption = "source: Integrated Food Security Phase Classification (IPC)", 
+       x = "Year", y = "% of population per ADM2")
+```
+
+
+## Next steps
+
+::: panel-tabset
+
+## Bivariate
+
+!["Nelson et al."](outputs/edges_sierra_leone.png){.fragment width="300"}
+
+## FS/road network
+
+![["Rozenberg et al. et al."](outputs/criticality_mozambique.png){.fragment width="400"}
+
+## FS framework
+
+!["Marivoet et al."](outputs/criticality_mozambique.png)
+
+:::
