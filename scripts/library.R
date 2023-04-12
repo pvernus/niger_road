@@ -27,6 +27,7 @@ pacman::p_load(
   plotly,
   datawizard,
   ggbeeswarm,
+  tidytext,
 # network data
   tidygraph,
   igraph,
