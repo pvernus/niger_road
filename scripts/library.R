@@ -1,5 +1,6 @@
 if (!require("qgisprocess")) remotes::install_github("paleolimbot/qgisprocess")
-if (!require("qgisprocess")) devtools::install_github("r-barnes/dggridR", vignette=TRUE)
+if (!require("dggridR")) devtools::install_github("r-barnes/dggridR", vignette=TRUE)
+if (!require("rhdx")) remotes::install_github("dickoa/rhdx")
 
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
@@ -25,6 +26,7 @@ pacman::p_load(
   cowplot,
   plotly,
   datawizard,
+  ggbeeswarm,
 # network data
   tidygraph,
   igraph,
@@ -34,6 +36,8 @@ pacman::p_load(
   dbscan,
   spNetwork,
   sfnetworks,
+  dbscan,
+  netrankr,
 # spatial
   osmdata, # import data from OpenStreetMap
   terra, # handle raster data
@@ -52,6 +56,8 @@ pacman::p_load(
   s2,
   rgrass,
   ggspatial,
+  viridis,
+  geos,
 # survey data
   survey,
   srvyr,

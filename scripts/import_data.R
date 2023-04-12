@@ -4,8 +4,27 @@ source("R/functions.R") # load functions
 ## IMPORT DATA
 
 # Administrative boundaries
-ner_adm03_feb2018 <- st_read("data_raw/ner_adm03_feb2018/NER_adm03_feb2018.shp")
-adm03 <- ner_adm03_feb2018 %>% 
+# from the rhdx package
+set_rhdx_config(hdx_site = "prod")
+get_rhdx_config()
+
+search_datasets("niger adm03 administrative boundaries-divisions 2018", rows = 5)
+
+ner_adm00 <- pull_dataset("cod-ab-ner") %>%
+  get_resource(2) %>%
+  read_resource()
+ner_adm01 <- pull_dataset("cod-ab-ner") %>%
+  get_resource(3) %>%
+  read_resource()
+ner_adm02 <- pull_dataset("cod-ab-ner") %>%
+  get_resource(4) %>%
+  read_resource()
+ner_adm03 <- pull_dataset("cod-ab-ner") %>%
+  get_resource(5) %>%
+  read_resource()
+
+ner_adm03 <- st_make_valid(ner_adm03)
+adm03 <- ner_adm03 %>% 
   clean_names() %>% 
   select(-c(objectid, id, iso3, iso2)) %>% # remove unnecessary variables
   mutate(id_adm1 = rowcacode1, # create primary key
@@ -13,9 +32,8 @@ adm03 <- ner_adm03_feb2018 %>%
          id_adm3 = rowcacode3
   )
 
-ner_adm02_feb2018 <- st_read("data_raw/ner_adm03_feb2018/NER_adm03_feb2018.shp")
-ner_adm02_feb2018 <- st_make_valid(ner_adm02_feb2018)
-adm02 <- ner_adm02_feb2018 %>% 
+ner_adm02 <- st_make_valid(ner_adm02)
+adm02 <- ner_adm02 %>% 
   clean_names() %>% 
   select(-c(objectid, iso3, iso2)) %>% # remove unnecessary variables
   mutate(id_adm1 = rowcacode1, # create primary key
@@ -23,13 +41,7 @@ adm02 <- ner_adm02_feb2018 %>%
   ) %>% 
   relocate(starts_with("id_"), .before = rowcacode1)
   
-regions <- adm03 %>% 
-  select(adm_01, id_adm1) %>% 
-  st_drop_geometry() %>% distinct()
-
-departements <- adm03 %>% 
-  select(adm_01, id_adm1, adm_02, id_adm2) %>% 
-  st_drop_geometry() %>% distinct()
+save(ner_adm00, ner_adm01, ner_adm02, ner_adm03, adm02, adm03, file = "data/ner_adm.RData")
 
 # Population
 ner_admpop_adm3_2022 <- read_csv(here("data_raw", "ner_admpop_adm3_2022.csv"))
@@ -48,33 +60,21 @@ pop_sf <- pop %>%
 
 
 # GRID3
-pop_rast <- rast(here("data_raw", "NER_population_v1_0_gridded.tif"))
-# WorldPop (Humdata)
-pop_density <- read_csv("data_raw/ner_pd_2020_1km_UNadj_ASCII_XYZ.csv") |> st_as_sf(coords = c("X", "Y"), crs = "EPSG:4326")
+set_rhdx_config(hdx_site = "prod")
+get_rhdx_config()
+search_datasets("GRID3 Niger Settlement Extents, Version 01.01", rows = 5)
 
-
-# Settlements
-localites <- st_read("data_raw/ner_localites-21-10/Localités 21-10/Localites.gpkg", layer = "REACH_Localites")
-settlements <- localites %>% 
+grid3_settlement <- pull_dataset("grid3-niger-settlement-extents-version-01-01") %>%
+  get_resource(1) %>%
+  read_resource() %>% 
   clean_names() %>% 
-  filter(type %in% c("CPT", "VA", "H")) %>%  # we leave camp sites and water points
-  mutate(id_adm3 = admin3pcode, # create primary key
-         id_adm2 = str_sub(id_adm3, 1, 9), # create foreign keys
-         id_adm1 = str_sub(id_adm3, 1, 6),
-         type = case_when(
-           type == "CPT" ~ "urban_neighborhood",
-           type == "VA" ~ "village",
-           type == "H" ~ "hamlet",
-           .default = NA_character_
-         ),
-         area = if_else(type == "urban_neighborhood", 1, 2)) %>% # create new variable
-  rename(long = longitude_x, lat = latitude_y, geometry = geom)
+  mutate(id_adm1 = adm1_pcode, # create primary key
+         id_adm2 = adm2_pcode, # create foreign keys
+         id_adm3 = adm3_pcode
+  ) %>% 
+  relocate(starts_with("id_"), .before = "adm1_pcode")
 
-# GRID3: Settlement
-grid3_ner_settlement <- st_read("data_raw/GRID3_Niger_Settlement_Extents_Version/GRID3_Niger_Settlement_Extents%2C_Version_01.01..shp") |> 
-  st_make_valid()
-grid3_ner_settlement <- grid3_ner_settlement |> mutate(pop = if_else(is.na(pop_un_adj), 1, pop_un_adj)) |> 
-  relocate(pop, .after = pop_un_adj)
+save(grid3_settlement, file = "data/grid3_settlement.RData")
 
 # Food security - IPC
 cadre_harmonise_caf_ipc <- read_excel("data_raw/cadre_harmonise_caf_ipc.xlsx") %>% 

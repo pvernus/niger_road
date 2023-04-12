@@ -2,110 +2,245 @@ source("scripts/library.R") # load packages
 source("R/functions.R") # load functions
 
 # load("data/network.RData")
+# load("data/ner_adm.RData")
 
-# import polygons and lines as sf objects
-polygons <- st_read("data_raw/hotosm_niger_roads_polygons_shp/hotosm_niger_roads_polygons.shp")
-lines <- st_read("data_raw/hotosm_niger_roads_lines_shp/hotosm_niger_roads_lines.shp") %>% 
-  select(osm_id, highway, geometry) %>% 
-  filter(highway %in% c('trunk', 'primary', 'secondary', 'tertiary', 
-                        'trunk_link', 'secondary_link', 'tertiary_link'))
+# from the rhdx package
+set_rhdx_config(hdx_site = "prod")
+get_rhdx_config()
 
-# OR get the data directly from OSM with the osmdata package
-bb <- getbb('niger', format_out = 'polygon')
-ner_highway <- opq(bbox = bb) %>% 
-  add_osm_feature(key = 'highway') %>% 
-  osmdata_sf() %>% 
-  osm_poly2line() %>% # convert osmdata polygons into lines
-  unique_osmdata()
+search_datasets("hotosm niger roads lines", rows = 2) # search dataset in HDX, limit the results to two rows
+osm_lines <- pull_dataset("hotosm_niger_roads") %>%
+  get_resource(1) %>%
+  read_resource()
 
+# keep only the main roads
+osm_lines <- osm_lines %>% select(osm_id, highway, geometry) %>%
+  filter(highway %in% c('trunk', 'primary', 'secondary', 'tertiary',
+                        'primary_link', 'secondary_link', 'tertiary_link')) %>% 
+  mutate(highway = case_when(
+    highway == "primary_link" ~ "primary",
+    highway == "secondary_link" ~ "secondary",
+    highway == "tertiary_link" ~ "tertiary",
+    .default = as.character(highway)
+  ))
+
+# cast from multilinestring to linestring for sfnetworks
+road_lines <- st_cast(osm_lines, "LINESTRING")
+
+st_write(road_lines, "data/road_lines.shp", append = TRUE)
+
+# round the coordinates
+st_geometry(road_lines) = st_geometry(road_lines) %>%
+  lapply(function(x) round(x, 2)) %>%
+  st_sfc(crs = st_crs(road_lines))
+
+## from sf object to igraph object
 # Step 1: clean the edges list with the GRASS's v.clean function via QGIS plugin
+# see: https://grass.osgeo.org/grass82/manuals/v.clean.html
 qgis_run_algorithm(
-"grass7:v.clean", # qgis_show_help("grass7:v.clean")
-  input = lines, # Path to a vector layer to clean
+  "grass7:v.clean",
+  # qgis_show_help("grass7:v.clean")
+  input = road_lines,
+  # Path to a vector layer to clean
   output = "data/lines_clean.shp",
   error = "data/line_errors.shp",
   type = 1,
-  tool = 0, # break
-  `-c` = 1)
+  tool = 0, # 0:break, 2:chdangle
+  # break
+  `-c` = 1
+)
 lines_clean <- st_read("data/lines_clean.shp")
 
-# Step 2: cleaned sf object with LINESTRING geometries as input, and returns a spatial tbl_graph.
-ner_graph <-  sf_to_tidygraph(lines_clean, directed = FALSE)
-
-ner_graph <- ner_graph %>% 
+## source: https://github.com/rladies/meetup-presentations_jozi/blob/master/sfnetworks-nov-2021/sfnetworks.Rmd
+# convert to sfnetworks
+roads <- as_sfnetwork(road_lines, directed = FALSE)
+# simply network
+simple = roads %>%
   activate("edges") %>%
-  filter(!edge_is_multiple()) %>% # filter out edges with parallel siblings
-  filter(!edge_is_loop()) # filter out edges which are loops
+  arrange(edge_length()) %>%
+  filter(!edge_is_multiple()) %>%
+  filter(!edge_is_loop())
+# subdivide edges
+subdivision = convert(simple, to_spatial_subdivision)
+# smooth pseudo nodes
+smoothed = convert(subdivision, to_spatial_smooth)
 
-# Step 3: create new length variable for edges
-ner_graph <- ner_graph %>%
-  activate(edges) %>% # specify if we want to manipulate the edges/nodes
-  mutate(length = st_length(geometry)) # add a variable describing the length of each edge (cf. weight)
-ner_graph
+# simplify intersections
+# step 1: cluster the nodes using the dbscan method, which clusters points in Euclidean space. 
+# Retrieve the coordinates of the nodes.
+node_coords = smoothed %>%
+  activate("nodes") %>%
+  st_coordinates()
 
-# length by type of highway
-ner_graph %>%
-  activate(edges) %>%
-  as_tibble() %>%
-  st_as_sf() %>%
-  group_by(highway) %>%
-  summarise(length = sum(length)) %>% 
-  arrange(desc(length))
+# step2: cluster the nodes with the DBSCAN spatial clustering algorithm.
+# eps = 1: nodes within a distance of 1 from each other will be in the same cluster.
+# minPts = 1: a node is assigned a cluster even if it is the only member of that cluster.
+clusters = dbscan(node_coords, eps = .01, minPts = 1)$cluster
+# Add the cluster information to the nodes of the network.
+clustered = smoothed %>%
+  activate("nodes") %>%
+  mutate(cls = clusters)
 
-# Centrality measures
+# step 3: verify that clustered nodes are connected on the network.
+clustered = clustered %>%
+mutate(cmp = group_components())
+
+# step 4: contract the network
+contracted = convert(
+  clustered,
+  to_spatial_contracted,
+  cls, cmp,
+  simplify = TRUE
+)
+
+# step 5: convert back to sfnetworks object
+contracted_sf <- contracted %>% 
+  activate("edges") %>% 
+  st_as_sf() 
+ner_graph <- as_sfnetwork(contracted_sf, directed = FALSE, length_as_weight = TRUE)
+
+autoplot(ner_graph)
+
+# Other method to convert to spatial tbl_graph.
+# ner_graph <-  sf_to_tidygraph(lines_clean, directed = FALSE, force = TRUE)
+
+sum(which_loop(ner_graph)) #should have no self-loop
+simplify_graph <- igraph::simplify(ner_graph, remove.loops = TRUE, remove.multiple = FALSE)
+sum(which_loop(simplify_graph))
+
+## Centrality measures
 # source: https://igraph.org/r/doc/betweenness.html
 
 graph <- ner_graph %>%
   activate(nodes) %>%
-  mutate(degree = centrality_degree(),
-         betweenness_l = centrality_betweenness(weight = length, normalized = TRUE),
-         betweenness = centrality_betweenness(normalized = TRUE)) %>%
+  mutate(
+    degree = centrality_degree(),
+    betweenness_dist = scales::rescale(
+      centrality_betweenness(weights = weight))
+  ) %>% 
   activate(edges) %>%
-  mutate(edge_betweenness_l = centrality_edge_betweenness(weight = length), 
-         edge_betweenness = centrality_edge_betweenness())
+  mutate(
+    edge_betweenness_dist = scales::rescale(
+      centrality_edge_betweenness(weights = weight, directed = FALSE),
+      to = c(0, 1)),
+    edge_betweenness = scales::rescale(
+      centrality_edge_betweenness(directed = FALSE),
+      to = c(0, 1))
+  )
 
-ggplot() +
-  geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), col = 'grey50') + 
-  geom_sf(data = graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), aes(col = betweenness, size = betweenness)) +
-  scale_colour_viridis_c(option = 'inferno') +
-  scale_size_continuous(range = c(0,4))
 
 lines_ner <- graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()
-st_write(lines_ner, "data/lines_ner.shp")
+st_write(lines_ner, "data/lines_ner.shp", append = TRUE)
 # st_read("data/lines_ner.shp")
+
 nodes_ner <- graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf()
-st_write(nodes_ner, "data/nodes_ner.shp")
+st_write(nodes_ner, "data/nodes_ner.shp", append = TRUE)
 # st_read("data/nodes_ner.shp")
 
-nodes_trim <- nodes_ner %>% 
-  filter(!degree == 2)
+
+## save raw data
+save(lines_clean,
+     lines_ner,
+     nodes_ner,
+     ner_graph,
+     graph,
+     file = "data/network.RData")
+
+
+## Map
+# Betweenness Centrality (edges)
+tm_shape(adm03) +
+  tm_borders('grey80') +
+  tm_shape(lines_ner) +
+  tm_lines(
+    lwd = "edge_betweenness_dist",
+    scale = 4,
+    col = "edge_betweenness_dist",
+    palette = viridis::viridis(4)
+  ) +
+  tm_scale_bar(position = c("center", "bottom")) +
+  tm_layout(title = "Betweenness Centrality (edges)",
+            asp = 0,
+            legend.stack = "horizontal") +
+  tm_compass(type = "rose", size = 2)
+
+## Map
+# Betweenness Centrality (nodes)
+tm_shape(adm03) +
+  tm_borders('grey80') +
+  tm_shape(lines_ner) +
+  tm_lines(col = 'darkblue', alpha = .3) +
+  tm_shape(nodes_ner) +
+  tm_bubbles(
+    col = "betweenness_dist",
+    size = "betweenness_dist",
+    palette = viridis::viridis(4),
+    scale = 0.7,
+    border.lwd = NA
+  ) +
+  tm_layout(title = "Betweenness Centrality", asp = 0) +
+  tm_scale_bar(position = c("center", "bottom")) +
+  tm_layout(title = "Betweenness Centrality (nodes)",
+            asp = 0,
+            legend.stack = "horizontal") +
+  tm_compass(type = "rose", size = 2)
 
 
 tmap_mode("view")
 
 tm_shape(pop_sf) +
-  tm_polygons("t_tl", palette = "Blues", n = 4, alpha = .5, title = "Population", group = "Population") +
-  tm_shape(ipc_2020_adm2) + 
-  tm_polygons("median", palette = "YlOrRd",  alpha = .5, id = "adm2_name", group = "Food Security") +
+  tm_polygons(
+    "t_tl",
+    palette = "Blues",
+    n = 4,
+    alpha = .5,
+    title = "Population",
+    group = "Population"
+  ) +
+  tm_shape(ipc_2020_adm2) +
+  tm_polygons(
+    "median",
+    palette = "YlOrRd",
+    alpha = .5,
+    id = "adm2_name",
+    group = "Food Security"
+  ) +
   tm_shape(lines_ner) +
-  tm_lines("edge_betweenness", palette = "YlOrRd", lwd = 3, 
-           group = "Roads") +
+  tm_lines(
+    "edge_betweenness",
+    palette = "YlOrRd",
+    lwd = 3,
+    group = "Roads"
+  ) +
   tm_shape(lines_ner) +
-  tm_lines("edge_betweenness_l", palette = "YlOrRd", lwd = 3, 
-           group = "Roads (weighted)") +
+  tm_lines(
+    "edge_betweenness_l",
+    palette = "YlOrRd",
+    lwd = 3,
+    group = "Roads (weighted)"
+  ) +
   tm_shape(lines_ner) +
   tm_lines("highway", lwd = 3, group = "Type") +
   tm_shape(nodes_trim) +
-  tm_bubbles(col = "betweenness", palette = "YlOrRd", alpha = .5, scale = .1,
-             group = "Roads") +
+  tm_bubbles(
+    col = "betweenness",
+    palette = "YlOrRd",
+    alpha = .5,
+    scale = .1,
+    group = "Roads"
+  ) +
   tm_shape(nodes_trim) +
-  tm_bubbles(col = "betweenness_l", palette = "YlOrRd", alpha = .5, scale = .1,
-             group = "Roads (weighted)") +
+  tm_bubbles(
+    col = "betweenness_l",
+    palette = "YlOrRd",
+    alpha = .5,
+    scale = .1,
+    group = "Roads (weighted)"
+  ) +
   tm_shape(adm03) +
   tm_borders() +
   tm_scale_bar() +
   tm_minimap()
 
 
-# save raw data
-save(polygons, lines, lines_clean, lines_ner, nodes_ner, ner_graph, graph, file = "data/network.RData")
+

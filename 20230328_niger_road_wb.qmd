@@ -1,23 +1,23 @@
 ---
-title:  |
-  | GCA
-  | Research for Impact
-subtitle: "WBG Niger Climate-Resilient inter-urban Connectivity Project"
-date: "March 28th, 2023"
+title: "WBG Niger Climate-Resilient inter-urban Connectivity Project"
+subtitle: "GCA Research for Impact"
+date: 03-28-2023
+date-format: long
 format: 
   revealjs:
     logo: "R/gca_logo_blue_rgb.png"
     footer: "Global Center on Adaptation"
-    fontsize: 10px
-    fontcolor: rgb(11, 95, 186)
+    fontcolor: "#0B5FBA"
+    fontsize: 16px
     mainfont: "Roboto"
     echo: false
     slide-number: true
+    embed-resources: true
 ---
 
+::: {style="font-size:150%"}
 ## Data
 
-::: {style="font-size: 0.8em"}
 -   **Population**
 
     -   Subnational (ADM1-3) population
@@ -33,6 +33,7 @@ format:
     -   Niger - Enquête Harmonisée sur le Conditions de Vie des Ménages 2018-2019 (World Bank)
 
 -   **Climate/weather and Land use**
+
 -   *Local trade, prices, production, etc. ? (edge weights)*
 :::
 
@@ -44,11 +45,10 @@ library(ggplot2)
 library(tmap)
 library(mapview)
 
-load("data/20230328_presentation")
+load("data/20230328_presentation.RData")
 ```
 
 ::: panel-tabset
-
 ## Population
 
 ```{r}
@@ -84,15 +84,15 @@ tm_shape(lines_ner) +
   tm_lines("edge_betweenness", palette = "YlOrRd", lwd = 3, 
            group = "Roads") +
 tm_shape(lines_ner) +
-  tm_lines("edge_betweenness_l", palette = "YlOrRd", lwd = 3, 
+  tm_lines("edge_betweenness_dist", palette = "YlOrRd", lwd = 3, 
            group = "Roads (weighted)") +
 tm_shape(lines_ner) +
   tm_lines("highway", lwd = 3, group = "Type") +
-tm_shape(nodes_trim) +
+tm_shape(nodes_ner) +
   tm_bubbles(col = "betweenness", palette = "YlOrRd", alpha = .5, scale = .1,
              group = "Roads") +
-tm_shape(nodes_trim) +
-  tm_bubbles(col = "betweenness_l", palette = "YlOrRd", alpha = .5, scale = .1,
+tm_shape(nodes_ner) +
+  tm_bubbles(col = "betweenness_dist", palette = "YlOrRd", alpha = .5, scale = .1,
              group = "Roads (weighted)") +
 tm_shape(adm03) +
   tm_borders() +
@@ -117,21 +117,18 @@ ggplot(aes(x = exercise_year)) +
        x = "Year", y = "% of population per ADM2")
 ```
 
-
 ## Next steps
 
 ::: panel-tabset
-
 ## Bivariate
 
-!["Nelson et al."](outputs/edges_sierra_leone.png){.fragment width="300"}
+![[Nelson et al. (2019)](https://doi.org/10.1177/0361198118822272)](outputs/external_fig/edges_sierra_leone.png){width="400"}
 
 ## FS/road network
 
-![["Rozenberg et al. et al."](outputs/criticality_mozambique.png){.fragment width="400"}
+![[Espinet et Rozenberg (2018)](https://doi.org/10.1177/0361198118794043)](outputs/external_fig/criticality_mozambique.png){width="800"}
 
 ## FS framework
 
-!["Marivoet et al."](outputs/criticality_mozambique.png)
-
+![[Marivoet et al. (2019)](https://www.sciencedirect.com/science/article/pii/S0305750X19300750)](outputs/external_fig/fs_typo.png){width="600"}
 :::

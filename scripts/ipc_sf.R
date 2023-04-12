@@ -9,8 +9,6 @@ ipc_sf <- ipc %>%
   merge(adm02, by = "id_adm2") %>% 
   st_as_sf()
 
-## Clustering
-
 # trend by region
 data_trends <- ipc_sf %>% 
   st_drop_geometry() %>% 
@@ -174,8 +172,13 @@ ggplot() +
   theme_bw()
 
 
+ipc_nodes <- st_join(nodes_ner, ipc_2020_adm2) %>%
+  st_drop_geometry() %>% 
+  select(nodeID, degree, betweenness, adm2_name, id_adm2, median, mean, iqr)
 
-
+ggplot(ipc_nodes, aes(x = median, y = betweenness)) +
+    geom_point()
+  
 
 
 
