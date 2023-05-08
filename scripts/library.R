@@ -9,6 +9,7 @@ pacman::p_load(
   tidyverse,
   DBI,
 # data preparation
+  haven,
   labelled,
   readxl,  
   visdat,

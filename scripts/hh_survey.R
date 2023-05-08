@@ -1,11 +1,11 @@
 source('scripts/library.R') # load packages
 source('R/functions.R') # load functions
+# load('data/short_survey.RData')
+# load('data/conso_survey.RData')
 
 url <- 'https://microdata.worldbank.org/index.php/catalog/4296/download/56136'
 download.file(url, 'data_raw/ner_2018_ehcvm.zip', mode='wb')
 # unzip('data_raw/ner_2018_ehcvm.zip')
-
-var_label(s07b_me_food_cons$s07bq01)
 
 # pre-processed
 ehcvm_individu_ner2018 <- read_dta('data_raw/ner_2018_ehcvm/ehcvm_individu_ner2018.dta')
@@ -25,6 +25,10 @@ s08b2_me_fodd_sec <- read_dta('data_raw/ner_2018_ehcvm/s08b2_me_ner2018.dta')
 #non-agricultural enterprises
 s10_1_me_nagric_ent <- read_dta('data_raw/ner_2018_ehcvm/s10_1_me_ner2018.dta')
 s10_2_me_nagric_ent <- read_dta('data_raw/ner_2018_ehcvm/s10_2_me_ner2018.dta')
+# agric
+s16a_me_agric <- read_dta('data_raw/ner_2018_ehcvm/s16a_me_ner2018.dta')
+s16c_me_agric <- read_dta('data_raw/ner_2018_ehcvm/s16c_me_ner2018.dta')
+
 
 # add primary/foreign keys to tables
 survey_ind <- ehcvm_individu_ner2018 %>% 
@@ -196,7 +200,7 @@ fcons_w %>%
 conso_agg <- ehcvm_conso_agg %>% 
   select(!c(country, year)) %>% 
   mutate(hhid = as_factor(hhid)) %>% 
-  left_join(survey_welfare %>% select(hhid, id_adm1, id_adm2, dali, dnal, dtot, def_spa, def_temp), by = 'hhid')
+  left_join(survey_welfare %>% select(hhid, id_adm1, id_adm2, zae, dali, dnal, dtot, def_spa, def_temp), by = 'hhid')
 
 # depan != dtot; does not seem to be related to modep
 conso_agg %>% 
@@ -206,6 +210,7 @@ conso_agg %>%
   distinct(hhid, depan_tot, dtot)
 
 conso_agg <- conso_agg %>% 
+  mutate(depan_def = depan/(def_spa*def_temp)) %>% 
   filter(codpr %in% 1:128) %>% # filter food items
   mutate(food_cat = case_when(
     codpr %in% 1:22 ~ 'Céréales et produits céréaliers',
@@ -340,63 +345,198 @@ conso_agg <- conso_agg %>%
     codpr == 127 ~ 'Noix de cola',
     codpr == 128 ~ 'Autres produits alimentaires',
     TRUE ~ as.character(NA)
-  )
+  ),
+  region = as_factor(region),
+  milieu = as_factor(milieu),
+  modep = as_factor(modep)
     )
 
-conso_agg %>% 
-  group_by(id_adm1, food_item) %>% 
-  summarize(total = sum(depan)) %>% 
-  slice_max(total, n = 10) %>% 
-  mutate(id_adm1 = as.factor(id_adm1),
-         food_item = reorder_within(food_item, total, id_adm1)) %>%
-  ggplot(aes(x = food_item, y = total, fill = id_adm1)) +
-  geom_bar(stat="identity") +
-  coord_flip() +
-  scale_x_reordered() +
-  facet_wrap(~id_adm1, scales = "free") +
-  theme_bw()
+conso_agg_w <- conso_agg %>%
+  as_survey_design(ids = c(grappe,hhid), 
+                   strata = c(region, zae), 
+                   weights = hhweight,
+                   nest = TRUE)
 
-conso_agg %>% 
-  group_by(id_adm1, food_item, food_cat) %>% 
-  summarize(total = sum(depan)) %>% 
-  ungroup() %>% 
-  slice_max(total, n = 10, by = id_adm1) %>% 
-  mutate(id_adm1 = as.factor(id_adm1),
-         food_item = reorder_within(food_item, total, id_adm1)) %>%
-  ggplot(aes(x = food_item, y = total, fill = food_cat)) +
-  geom_col(show.legend = FALSE) +
-  coord_flip() +
-  scale_x_reordered() +
-  facet_wrap(~id_adm1, scales = "free") +
-  theme_bw()
+save(fcons, fcons_w, conso_agg, conso_agg_w, file = 'data/conso_survey.RData')
 
-# by milieu
-conso_agg %>% 
-  group_by(milieu, food_item, food_cat) %>% 
-  summarize(total = sum(depan)) %>% 
+
+# Plots
+
+conso_agg_w %>% 
+  group_by(adm_01, food_item, food_cat) %>% 
+  summarise(total = survey_total(depan_def, na.rm = TRUE)) %>% 
   ungroup() %>% 
-  slice_max(total, n = 10, by = milieu) %>% 
-  mutate(milieu = as.factor(milieu),
-         food_item = reorder_within(food_item, total, milieu)) %>%
+  slice_max(total, n = 10, by = adm_01) %>% 
+  mutate(adm_01 = as.factor(adm_01),
+         food_item = reorder_within(food_item, total, adm_01)) %>%
   ggplot(aes(x = food_item, y = total, fill = food_cat)) +
-  geom_col(show.legend = FALSE) +
+  geom_col() +
   coord_flip() +
   scale_x_reordered() +
-  facet_wrap(~milieu, scales = "free") +
-  theme_bw()
+  facet_wrap(~adm_01, scales = "free_y") +
+  labs(x = 'Produits alimentaires', y = 'Dépenses annuelles', fill = 'Catégorie') +
+  theme_bw() +
+  theme(legend.position="bottom",
+        legend.text = element_text(size=10))
+
+ggsave("outputs/plot_food_basket_region.png", width = 40, height = 20, units = "cm")
 
 # by milieu and modep
-conso_agg %>% 
+conso_agg_w %>% 
   group_by(milieu, modep, food_item, food_cat) %>% 
-  summarize(total = sum(depan)) %>% 
+  summarise(total = survey_total(depan_def, na.rm = TRUE)) %>% 
   ungroup() %>% 
   slice_max(total, n = 10, by = c(milieu, modep)) %>% 
-  mutate(modep = as.factor(modep),
-         milieu = as.factor(milieu),
-         food_item = tidytext::reorder_within(food_item, total, list(milieu, modep))) %>%
+  mutate(food_item = tidytext::reorder_within(food_item, total, list(milieu, modep))) %>%
   ggplot(aes(x = food_item, y = total, fill = food_cat)) +
-  geom_col(show.legend = FALSE) +
+  geom_col() +
   coord_flip() +
   scale_x_reordered() +
   facet_wrap(~milieu+modep, scales = "free_y") +
+  labs(x = 'Produits alimentaires', y = 'Dépenses annuelles', fill = 'Catégorie') +
+  theme_bw() +
+  theme(legend.position="bottom",
+        legend.text = element_text(size=10))
+
+ggsave("outputs/plot_food_basket_milieu_modep.png", width = 40, height = 20, units = "cm")
+
+# by zae
+conso_agg %>% 
+  group_by(zae, food_item, food_cat) %>% 
+  summarize(total = sum(depan_def)) %>% 
+  ungroup() %>% 
+  slice_max(total, n = 10, by = zae) %>% 
+  mutate(zae = as.factor(zae),
+         food_item = reorder_within(food_item, total, zae)) %>%
+  ggplot(aes(x = food_item, y = total, fill = food_cat)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_x_reordered() +
+  facet_wrap(~id_adm1, scales = "free_y") +
   theme_bw()
+
+# Agriculture
+
+agric_a <- s16a_me_agric %>% 
+  select(vague, grappe, menage, s16aq02, s16aq03, s16aq07, s16aq08, s16aq09a, s16aq09b) %>% 
+  rename(champ = s16aq02,
+         parcelle = s16aq03,
+         nb_culture = s16aq07,
+         princ_culture = s16aq08,
+         unit_superf = s16aq09b) %>% 
+  mutate(princ_culture = as_factor(princ_culture),
+         unit_superf = if_else(s16aq09a > 4000, 2, unit_superf), # outliers
+         superficie = if_else(unit_superf == 2, s16aq09a/10000, s16aq09a) # convert sqrm to hect
+         ) %>% 
+  filter(!princ_culture == 'NA') %>% 
+  left_join(survey_welfare %>% select(hhid, id_adm1, id_adm2, vague, grappe, menage, zae, region, milieu, hhweight, hhsize), by = c("vague", "grappe", "menage")) %>% 
+  mutate(zae = as_factor(zae),
+         region = str_to_title(as_factor(region)),
+         milieu = str_to_title(as_factor(milieu)))
+
+# Superficie culture principale par region
+p <- agric_a %>% 
+  group_by(region, princ_culture) %>% 
+  summarize(superficie = sum(superficie, na.rm = TRUE)) %>% 
+  arrange(desc(superficie))
+
+p %>% mutate(princ_culture = reorder_within(princ_culture, superficie, region)) %>%
+  ggplot(aes(x = princ_culture, y = superficie)) +
+  geom_col(fill = '#2d67cc', show.legend = FALSE) +
+  coord_flip() +
+  scale_x_reordered() +
+  facet_wrap(~region, scales = 'free_y', nrow = 2) +
+  labs(x = 'Culture principale par parcelle', y = 'Superficie (Ha)') +
+  theme_minimal() +
+  theme(axis.text = element_text(size=12),
+        strip.text = element_text(size=14, face = "bold"))
+
+ggsave("outputs/plot_main_crop_area.png", width = 40, height = 20, units = "cm")
+
+agric_c <- s16c_me_agric %>% 
+  select(vague, grappe, menage, s16cq04, s16cq08, s16cq18, s16cq19, s16cq20, s16cq23,
+         s16cq24, s16cq25, s16cq28, starts_with('s16cq29')) %>% 
+  mutate(s16cq04 = as_factor(s16cq04),
+         s16cq19 = as_factor(s16cq19),
+         s16cq28 = as_factor(s16cq28)) %>% 
+  rename(princ_culture = 's16cq04',
+         buyer = 's16cq19') %>% 
+  mutate_at(vars(matches("s16cq29")), as_factor) %>% 
+  pivot_longer(starts_with('s16cq29'), names_to = 'princ_diff', values_to = 'rep') %>% 
+  mutate(princ_diff = fct_recode(princ_diff, 
+              'Autre' = "s16cq29__7", 
+              'Marché - Demande' = "s16cq29__5", 'Marché - Prix' = "s16cq29__6",
+              'Transport - Coût' = "s16cq29__3", 'Transport - Qualité des routes' = "s16cq29__4", 
+              'Distance - Route' = "s16cq29__1", 'Distance - Marché' = "s16cq29__2"
+              ),
+         rep = fct_relevel(rep, 'Non, pas choisi', after = Inf)) %>% 
+  left_join(survey_welfare %>% select(hhid, id_adm1, id_adm2, vague, grappe, menage, zae, region, milieu, hhweight, hhsize), by = c("vague", "grappe", "menage")) %>% 
+  mutate(zae = as_factor(zae),
+         region = str_to_title(as_factor(region)),
+         milieu = str_to_title(as_factor(milieu)))
+
+palette <- c('#2d67cc','#e4e6eb')
+
+agric_c %>% 
+  group_by(region, s16cq28) %>% 
+  summarize(count = n()) %>% 
+  mutate(perc = count/sum(count)*100) %>% 
+  rename(difficulte_vente = s16cq28) %>% 
+  mutate(region = reorder(region, perc)) %>% 
+  ggplot(aes(fill = difficulte_vente, x = region, y = perc, label = perc)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values=palette) +
+  labs(x = "", y = "Pourcentage", fill = "Difficulté à écouler la production") +
+  ggtitle("Les difficultés à écouler la production touchent\nen premier lieu la région d'Agadez") +
+  theme_minimal() +
+  theme(axis.text = element_text(size=16),
+        legend.text = element_text(size=14),
+        title = element_text(size=19, face = 'bold'),
+        legend.position="bottom")
+
+ggsave("outputs/plot_diff_to_sell.png", width = 22, height = 30, units = "cm")
+
+palette <- c('#2d67cc','#6f9be8','#e4e6eb')
+
+agric_c %>%
+  filter(s16cq28 == 'Oui') %>% 
+  group_by(region, princ_diff, rep) %>% 
+  tally() %>% 
+  ggplot(aes(fill = rep, x = princ_diff, y = n)) +
+  geom_bar(stat="identity", position = position_fill(reverse = TRUE)) +
+  scale_fill_manual(values=palette) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  facet_wrap(~region) +
+  labs(x = '', y = '', fill = '', 
+       legend = "Principales difficultés dans l'écoulement du produit") +
+  ggtitle("La faiblesse des prix Hors Champ limite l'offre,\nles contraintes logistiques varient selon les régions") +
+  theme_minimal_grid() +
+  theme(strip.text = element_text(size=14, face = "bold"),
+        legend.text = element_text(size=16), legend.position="bottom",
+        title = element_text(size=16, face = "bold"))
+
+ggsave("outputs/plot_reason_diff_to_sell.png", width = 30, height = 20, units = "cm")
+  
+agric_c %>% 
+  filter(!is.na(buyer)) %>% 
+  filter(princ_culture %in% c('Mil', 'Maïs', 'Sorgho')) %>% 
+  group_by(region, princ_culture, buyer) %>% 
+  tally() %>% 
+  ungroup() %>% 
+  mutate(region = reorder(region, n)) %>% 
+  ggplot(aes(fill = buyer, x = princ_culture, y = n)) +
+  geom_bar(position="fill", stat="identity") +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(x = '', y = 'Pourcentage', fill = "Principal acheteur") +
+  ggtitle("Une part importante de la production locale en denrées de base se vend de gré à gré, hors des marchés") +
+  facet_wrap(~region, scales = 'free_x', nrow = 2) +
+  theme_minimal_grid() +
+  theme(strip.text = element_text(face = "bold"),
+        legend.position = "bottom")
+
+ggsave("outputs/plot_reason_diff_to_sell.png", width = 40, height = 20, units = "cm")
+
+
+
+

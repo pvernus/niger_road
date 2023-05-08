@@ -40,6 +40,14 @@ adm02 <- ner_adm02 %>%
          id_adm2 = rowcacode2 # create foreign keys
   ) %>% 
   relocate(starts_with("id_"), .before = rowcacode1)
+
+ner_adm01 <- st_make_valid(ner_adm01)
+adm01 <- ner_adm01 %>% 
+  clean_names() %>% 
+  select(-c(objectid, iso3, iso2)) %>% # remove unnecessary variables
+  mutate(id_adm1 = rowcacode1 # create primary key
+  ) %>% 
+  relocate(starts_with("id_"), .before = rowcacode1)
   
 save(ner_adm00, ner_adm01, ner_adm02, ner_adm03, adm02, adm03, file = "data/ner_adm.RData")
 
