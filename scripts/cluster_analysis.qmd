@@ -1,0 +1,239 @@
+---
+title: "Food security analysis"
+format: html
+editor: visual
+---
+
+Spatial interpolation
+
+Spatial gridding
+
+# Select the set of variables
+
+```{r}
+load('data/short_survey.RData')
+load('data/conso_survey.RData')
+load('data/full_survey.RData')
+load('data/short_survey.RData')
+```
+
++--------------+-------------------------------------------------------------------------------------+------------------------+
+| Dimension    | Indicator                                                                           | Data source            |
++==============+=====================================================================================+========================+
+| Potential    | Geo-physical characteristics                                                        | EHCVM 2018             |
+|              |                                                                                     |                        |
+|              | Agroecological zones                                                                |                        |
+|              |                                                                                     |                        |
+|              | Cropland extent                                                                     |                        |
++--------------+-------------------------------------------------------------------------------------+------------------------+
+| Availability | Crop food production (SPAM)                                                         |                        |
+|              |                                                                                     |                        |
+|              | Distance to market                                                                  |                        |
+|              |                                                                                     |                        |
+|              | Distance to the road (RN1, others);                                                 |                        |
+|              |                                                                                     |                        |
+|              | Food economy employment;                                                            |                        |
+|              |                                                                                     |                        |
+|              | Conflict intensity index                                                            |                        |
++--------------+-------------------------------------------------------------------------------------+------------------------+
+| Access       | Local crop food production                                                          |                        |
+|              |                                                                                     |                        |
+|              | Distance to market                                                                  |                        |
+|              |                                                                                     |                        |
+|              | Distance to the road (RN1, others);                                                 |                        |
+|              |                                                                                     |                        |
+|              | Milieu (urban/rural)                                                                |                        |
+|              |                                                                                     |                        |
+|              | Food consumption per capita (LSMS);                                                 |                        |
+|              |                                                                                     |                        |
+|              | Food basket diversity (FAO);                                                        |                        |
+|              |                                                                                     |                        |
+|              | HH characteristics (Hh age, Hh gender, income, etc.);                               |                        |
+|              |                                                                                     |                        |
+|              | Conflict intensity index                                                            |                        |
++--------------+-------------------------------------------------------------------------------------+------------------------+
+| Utilization  | Infant anthropometry (DHS, LSMS)                                                    |                        |
+|              |                                                                                     |                        |
+|              | HH characteristics (Hh age, Hh gender, income, etc.)                                |                        |
+|              |                                                                                     |                        |
+|              | Distance to / \# of schools (WB)                                                    |                        |
+|              |                                                                                     |                        |
+|              | Distance to / \# of pharmacy (WB)                                                   |                        |
+|              |                                                                                     |                        |
+|              | Distance principale srce d'approv eau de boisson saison seche s11q28; pluies s11q30 |                        |
+|              |                                                                                     |                        |
+|              | Difficultes depenses maladie s20q13\_\_9;                                           |                        |
+|              |                                                                                     |                        |
+|              | Difficultes depenses frais de scolarite enfants s20q11                              |                        |
++--------------+-------------------------------------------------------------------------------------+------------------------+
+
+```{r availability}
+
+# Food agriculture
+agric_a <- s16a_me_agric %>% 
+  select(vague, grappe, menage, s16aq02, s16aq07, s16aq08, s16aq09a, s16aq09b) %>% 
+  rename(champ = s16aq02,
+         nb_culture = s16aq07,
+         princ_culture = s16aq08,
+         unit_superf = s16aq09b) %>% 
+  mutate(princ_culture = as_factor(princ_culture),
+         unit_superf = if_else(s16aq09a > 4000, 2, unit_superf), # outliers
+         superficie_ha = if_else(unit_superf == 2, s16aq09a/10000, s16aq09a) # convert sqrm to ha
+         ) %>% 
+  filter(!princ_culture == 'NA') %>% 
+  left_join(survey_welfare %>% select(hhid, id_adm1, id_adm2, vague, grappe, menage, zae, region, milieu, hhweight, hhsize), by = c("vague", "grappe", "menage")) %>% 
+  mutate(zae = as_factor(zae),
+         region = str_to_title(as_factor(region)),
+         milieu = str_to_title(as_factor(milieu)))
+
+# Cultivated area per HH
+cluster_data <- agric_a %>%
+  select(hhid, superficie_ha) %>% 
+  group_by(hhid) %>% 
+  summarize(m_total_superf = sum(superficie_ha)) %>% # total cultivated area per HH
+  ungroup() %>% 
+  right_join(survey_welfare %>% select(hhid, grappe, region, zae, hhweight), by = "hhid") %>% 
+  mutate(m_total_superf = if_else(is.na(m_total_superf), 0, m_total_superf))
+
+# Diversity of cultivated crops per HH
+cluster_data <- agric_a %>% 
+  select(hhid, princ_culture, superficie_ha) %>% 
+  pivot_wider(names_from = princ_culture, values_from = superficie_ha, 
+              values_fn = sum, names_prefix = "i_", values_fill = 0) %>% 
+  group_by(hhid) %>% 
+  summarize(crops_diversity = simpson(starts_with('i_'))) %>% 
+  ungroup() %>% 
+  right_join(cluster_data, by = "hhid")
+  
+food_employment <- s04_me_employment %>% 
+  select(vague, grappe, menage, 
+         id_ind = s01q00a, # id ind
+         main_empl = s04q28a, # prim. job
+         month_main_empl = s04q32, # prim. job - total months
+         day_main_empl = s04q37, # prim. job - days per month
+         hour_main_empl = s04q37, # prim. job - hours per day
+         starts_with("s04q29"), # prim. job - job category
+         starts_with("s04q30"), # prim. job - activity category
+         sec_empl = s04q28b, # sec. job
+         month_sec_empl = s04q54, # sec. job - total months 
+         day_sec_empl = s04q55, # sec. job - days per month 
+         hour_sec_empl = s04q56, # sec. job - hours per day 
+         starts_with("s04q51"), # prim. job - job category
+         starts_with("s04q52") # prim. job - activity category
+  ) %>% 
+  mutate(
+    main_empl = as_factor(main_empl),
+    across(starts_with("s04q29"), as_factor),
+    across(starts_with("s04q30"), as_factor),
+    across(starts_with("s04q51"), as_factor),
+    across(starts_with("s04q52"), as_factor)
+  ) %>% 
+  rename(
+    prim_code_prof = s04q29d,
+    prim_code_emploi = s04q29b,
+    prim_branche_activite = s04q30c,
+    prim_code_activite = s04q30d,
+    prim_code_section = s04q30b,
+    sec_code_emploi = s04q51b,
+    sec_code_prof = s04q51d,
+    sec_branche_activite = s04q52c,
+    sec_code_activite = s04q52d,
+    sec_code_section = s04q52b,    
+  ) %>% 
+  mutate(prim_food_empl = as_factor(case_when(
+    # food agriculture
+    prim_code_section == "Agriculture, pêche, foresterie" | prim_branche_activite %in% c("Agriculture vivrière et activités annexes", "Agriculture industrielle et d'exportation", "Sylviculture, exploitation forestière, activités annexes", "Elevage et chasse") ~ "Food agriculture",
+    prim_code_prof %in% c("éleveur de bétail", "Maraîcher", "Cultivateur") ~ "Food agriculture",
+    # food marketing
+    prim_branche_activite == "Commerce de gros et activités d'intermédiaires du commerce de gros" & prim_code_activite == "Commerce de gros de produits agricoles bruts, d'animaux vivants, de produits alimentaires, boissons et tabacs" ~ "Food marketing",
+    prim_code_activite %in% c("Commerce de détail de fruits et légumes", "Commerce de détail d’autres produits alimentaires", "Commerce de détail général (alimentation, boutique, épicerie, …)") ~ "Food marketing",
+    prim_branche_activite == "Transports terrestres, transport par conduites" ~ "Food marketing",
+    prim_code_emploi == "AGRICULTEURS ET OUVRIERS QUALIFIES DE L'AGRICULTURE ET LA PECHE" & prim_code_activite == "Commerce de détail d’autres produits (y compris activités d’intermédiaire du commerce de détail)" ~ "Food marketing",
+    # food processing
+    prim_branche_activite == "Fabrication de produits alimentaires et de boissons" ~ "Food processing",
+    # food away-from-home
+    prim_branche_activite == "Hôtels et restaurants" ~ "Food away-from-home",
+    .default = "Other"
+  )),
+  sec_food_empl = as_factor(case_when(
+    # food agriculture
+    sec_code_section == "Agriculture, pêche, foresterie" | sec_branche_activite %in% c("Agriculture vivrière et activités annexes", "Agriculture industrielle et d'exportation", "Sylviculture, exploitation forestière, activités annexes", "Elevage et chasse") ~ "Food agriculture",
+    sec_code_emploi %in% c("éleveur de bétail", "Maraîcher", "Cultivateur") ~ "Food agriculture",
+    sec_code_prof %in% c("ouvrier qualifié de l'agriculture", "autres agriculteurs et ouvriers qualifies de l'agriculture et la peche non classé ailleurs", "Cultivateur", "éleveur de bétail", "Maraîcher", "Ouvrier, manœuvre agricole") ~ "Food agriculture",
+    # food marketing
+    sec_branche_activite == "Commerce de gros et activités d'intermédiaires du commerce de gros" & sec_code_activite == "Commerce de gros de produits agricoles bruts, d'animaux vivants, de produits alimentaires, boissons et tabacs" ~ "Food marketing",
+    sec_code_activite %in% c("Commerce de détail de fruits et légumes", "Commerce de détail d’autres produits alimentaires", "Commerce de détail général (alimentation, boutique, épicerie, …)") ~ "Food marketing",
+    sec_branche_activite == "Transports terrestres, transport par conduites" ~ "Food marketing",
+    sec_code_emploi %in% c("AGRICULTEURS ET OUVRIERS QUALIFIES DE L'AGRICULTURE ET LA PECHE", "Ouvrier, manœuvre agricole") & sec_code_activite == "Commerce de détail d’autres produits (y compris activités d’intermédiaire du commerce de détail)" ~ "Food marketing",
+    sec_code_prof %in% c("vendeur de fruits", "vendeur de céréales", "vendeur de vivres frais (alloco, igname, taro, autres féculents)", "vendeur de légumes et arachides et tous condiments", "Boucher - vendeur", "Docker") ~ "Food marketing",
+    # food processing
+    sec_branche_activite == "Fabrication de produits alimentaires et de boissons" ~ "Food processing",
+    # food away-from-home
+    sec_branche_activite == "Hôtels et restaurants" ~ "Food away-from-home",
+    sec_code_prof %in% c("vendeur de beignets et d'autres aliments préparés (vendeur d'aliments)") ~ "Food away-from-home",
+    .default = "Other"
+  ))
+  ) %>% 
+    relocate(c("prim_food_empl", "sec_food_empl"))
+    
+a <- food_employment %>% 
+  right_join(survey_ind %>% select(vague, grappe, menage, id_ind = numind, hhid, sexe, age), by =c("vague", "grappe", "menage", "id_ind"))
+
+a %>% 
+  filter(age > 15 & age < 70) %>% 
+  filter(sexe == 2) %>% 
+  select(prim_food_empl, sec_food_empl, month_main_empl:hour_main_empl, month_sec_empl:hour_sec_empl) %>% 
+  vis_miss()
+
+
+# Survey design
+survey_design <- cluster_data %>% 
+  as_survey_design(ids = c(grappe,hhid), 
+                   strata = c(region, zae), 
+                   weights = hhweight,
+                   nest = TRUE)
+
+# Create weighted variables 
+survey_design <- cluster_data %>% 
+  mutate(total_superf_percent_rank = percent_rank(m_total_superf), # Cultivated area per HH
+         
+         ) 
+
+# Add labels to new variables
+var_label(survey_design) <- list(
+  total_superf_percent_rank = "Percent rank at the country-level of the total area cultivated by households",
+  crops_diversity = "Simpson index of the crops cultivated by households"
+)
+
+var_label(survey_design$total_superf_percent_rank)
+```
+
+# Vulnerability profiles
+
+Objective: account for local creation and reinforcement of vulnerability
+
+## PCA
+
+## Hierarchical clustering
+
+Coordinates of units are used as a distance matrix for the HAC.
+
+Ward's method
+
+Density is used as an illustrative variable \[include it in the mapping?\]
+
+# GIS / spatial analysis
+
+Objective: map the spatial distribution of each vulnerability profile and compare them to various hazards.
+
+## Spatial clustering (spatial autocorrelation) 
+
+Global Moran's I and Geary's C statistics on each vulnerability profile
+
+Spatial distribution / spatial overlay of each vulnerability profile with different hazards' delineations
+
+# Sensitivity and uncertainty analysis
+
+Hex grid / ADM
+
+K-Means algorithm, Fuzzy geographically weighted clustering adds neighborhood and population effect

@@ -66,6 +66,10 @@ pacman::p_load(
   convey,
   vardpoor,
   laeken,
-  questionr
+  questionr,
+  # cluster
+  cluster,
+  stats,
+  divseg
 )
 

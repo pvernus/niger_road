@@ -14,7 +14,7 @@ ehcvm_welfare_ner2018 <- read_dta('data_raw/ner_2018_ehcvm/ehcvm_welfare_ner2018
 grappe_gps_ner2018 <- read_dta('data_raw/ner_2018_ehcvm/grappe_gps_ner2018.dta')
 #employment
 s04_me_employment <- read_dta('data_raw/ner_2018_ehcvm/s04_me_ner2018.dta')
-s04_co_emplyment <- read_dta('data_raw/ner_2018_ehcvm/s04_co_ner2018.dta')
+s04_co_employment <- read_dta('data_raw/ner_2018_ehcvm/s04_co_ner2018.dta')
 #food consumption
 ehcvm_conso_agg <- read_dta('data_raw/ner_2018_ehcvm/ehcvm_conso_ner2018.dta')
 s07b_me_food_cons <- read_dta('data_raw/ner_2018_ehcvm/s07b_me_ner2018.dta')
@@ -151,7 +151,7 @@ survey_desgn <- svydesign(id = ~ grappe+hhid,
 
 # save data
 save(ehcvm_individu_ner2018, ehcvm_menage_ner2018, ehcvm_welfare_ner2018, grappe_gps_ner2018, # pre-processed
-     s04_me_employment, s04_co_emplyment, # employment
+     s04_me_employment, s04_co_employment, # employment
      ehcvm_conso_agg, s07b_me_food_cons, # food consumption
      s08a_me_food_sec, s08b1_me_food_sec, s08b2_me_fodd_sec, # food security
      s10_1_me_nagric_ent, s10_2_me_nagric_ent, # non-agricultural enterprises
