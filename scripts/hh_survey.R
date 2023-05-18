@@ -155,6 +155,7 @@ save(ehcvm_individu_ner2018, ehcvm_menage_ner2018, ehcvm_welfare_ner2018, grappe
      ehcvm_conso_agg, s07b_me_food_cons, # food consumption
      s08a_me_food_sec, s08b1_me_food_sec, s08b2_me_fodd_sec, # food security
      s10_1_me_nagric_ent, s10_2_me_nagric_ent, # non-agricultural enterprises
+     s16a_me_agric, s16c_me_agric, # agriculture
      survey_ind, survey_menage, survey_welfare, survey_desgn, # clean/processed data
      food_security_a, food_security_b1, food_security_b2, # processed food security data
      file = 'data/full_survey.RData')
