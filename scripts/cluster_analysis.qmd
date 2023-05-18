@@ -287,13 +287,13 @@ survey_design <- cluster_data %>%
 
 wt_sh_fcons <- survey_design %>% 
   group_by(id_adm2) %>% 
-  summarise(sh_fcons_mean = survey_mean(sh_fcons, na.rm = TRUE),
-            fcons_pc_percentile_rank_mean = survey_mean(fcons_pc_percentile_rank, na.rm = TRUE))
+  summarise(sh_food_cons = survey_mean(sh_fcons, na.rm = TRUE),
+            food_cons_pc = survey_mean(fcons_pc_percentile_rank, na.rm = TRUE))
 
 wt_crop_production <- survey_design %>% 
   group_by(id_adm2) %>%
-  summarise(crops_diversity_mean = survey_mean(crops_diversity, na.rm = TRUE),
-            hh_superf_percent_rank_mean = survey_mean(hh_superf_percent_rank, na.rm = TRUE))
+  summarise(crops_diversity = survey_mean(crops_diversity, na.rm = TRUE),
+            cultivated_area = survey_mean(hh_superf_percent_rank, na.rm = TRUE))
     
 wt_empl_food <- survey_design %>% 
   group_by(id_adm2) %>% 
@@ -308,8 +308,8 @@ wt_h_gender <- survey_design %>%
   summarise(pct = survey_prop()) %>% 
   select(id_adm2, h_gender, pct) %>% 
   pivot_wider(names_from = h_gender, values_from = pct) %>% 
-  rename(sh_h_male = '0',
-         sh_h_female = '1') %>% 
+  rename(hh_male = '0',
+         hh_female = '1') %>% 
   ungroup()
 
 wt_h_literacy <- survey_design %>% 
@@ -317,8 +317,8 @@ wt_h_literacy <- survey_design %>%
   summarise(pct = survey_prop()) %>% 
   select(id_adm2, h_literacy, pct) %>% 
   pivot_wider(names_from = h_literacy, values_from = pct) %>% 
-  rename(sh_h_literacy = '1') %>% 
-  select(id_adm2, sh_h_literacy) %>% 
+  rename(hh_literacy = '1') %>% 
+  select(id_adm2, hh_literacy) %>% 
   ungroup()
 
 wt_h_handicap <- survey_design %>% 
@@ -326,8 +326,8 @@ wt_h_handicap <- survey_design %>%
   summarise(pct = survey_prop()) %>% 
   select(id_adm2, h_handicap, pct) %>% 
   pivot_wider(names_from = h_handicap, values_from = pct) %>% 
-  rename(sh_h_handicap = '1') %>% 
-  select(id_adm2, sh_h_handicap) %>% 
+  rename(hh_handicap = '1') %>% 
+  select(id_adm2, hh_handicap) %>% 
   ungroup()
 
 wt_h_unemploy <- survey_design %>% 
@@ -335,8 +335,8 @@ wt_h_unemploy <- survey_design %>%
   summarise(pct = survey_prop()) %>% 
   select(id_adm2, h_unemploy, pct) %>% 
   pivot_wider(names_from = h_unemploy, values_from = pct) %>% 
-  rename(sh_h_unemploy = '0') %>% 
-  select(id_adm2, sh_h_unemploy) %>% 
+  rename(hh_unemploy = '0') %>% 
+  select(id_adm2, hh_unemploy) %>% 
   ungroup()
 
 
@@ -351,11 +351,11 @@ wt_cluster_data <- wt_sh_fcons %>%
 
 # vis_dat(wt_cluster_data)
 wt_cluster_data <- wt_cluster_data %>% 
-  mutate(across(sh_h_male:sh_h_unemploy, \(x) replace_na(x, 0)))
+  mutate(across(hh_male:hh_unemploy, \(x) replace_na(x, 0)))
 
 # Add labels to new variables
 var_label(survey_design) <- list(
-  total_superf_percent_rank = "Percent rank at the country-level of the total area cultivated by households",
+  cultivated_area = "Percent rank at the country-level of the total area cultivated by households",
   crops_diversity = "Simpson index of the crops cultivated by households"
 )
 
@@ -369,15 +369,45 @@ Objective: account for local creation and reinforcement of vulnerability
 ## Correlation matrix
 
 ```{r}
-ppsr::visualize_pps(df = wt_cluster_data)
-ppsr::visualize_correlations(df = wt_cluster_data)
+cluster_df <- wt_cluster_data |> select(-id_adm2)
+cluster_norm <- scale(cluster_df)
+
+GGally::ggpairs(cluster_df)
+ppsr::visualize_pps(cluster_df)
+
+corr_matrix <- cor(cluster_df)
+score_matrix <- score_matrix(cluster_df)
+cov_matrix <- cov(cluster_df)
+
+ggcorrplot(corr_matrix)
+
+tmwr_cols <- colorRampPalette(c("#91CBD765", "#CA225E"))
+cluster_df %>% 
+  cor() %>% 
+  corrplot(col = tmwr_cols(200), tl.col = "black", method = "ellipse")
+
 ```
 
 ## PCA
 
 ```{r}
-pca <- principal_components(..., n = "auto")
-pca
+data_pca <- princomp(corr_matrix)
+summary(data_pca)
+
+# loadings of each principal component
+data_pca$loadings[, 1:2]
+
+# scree plot
+fviz_eig[data_pca, addlabels = TRUE]
+# biplot of the attributes
+fviz_pca_var(data_pca, col.var = "black")
+# contribution of each variable (cos2 = quality of representation)
+fviz_cos2(data_pca, choice = "var", axes = 1:2)
+# biplot combined with cos2
+fviz_pca_var(data_pca, col.var = "cos2",
+             gradient.cols = c("black", "orange", "green"),
+             repel = TRUE)
+
 
 ```
 
@@ -387,8 +417,41 @@ Ward's method
 
 ```{r}
 md <- daisy(factor_scores) # dist() distance matrix
+
 tree <- hclust(md, method = "ward.D2")
+
 plot(tree, labels = FALSE, main = "Dendrogramme")
+fviz(tree, cex = .5)
+
+# measure how well the cluster tree reflects the data: compute correlation between the cophenetic distances and the distance matrix (i.e. here factor scores); high correlation means high accuracy of the clustering solution.
+tree_coph <- cophenetic(tree)
+cor(factor_scores, tree_coph)
+# test different distance methods
+
+# cut and visualize tree into clusters
+fviz_dend(tree, k = 4, # cut in four groups
+     cex = .5, # label size
+     horiz = TRUE,
+     k_colors = "jco", # other option: c("#2E9FDF", "#00AFBB", "E7B800", "#FC4E07")
+     rect = TRUE,
+     rect_border = "jco",
+     rect_fill = TRUE
+)
+
+# graph visualization
+require("igraph")
+fviz_dend(tree, k = 4, k_colors = "jco", type = "phylogenic", repel = TRUE)
+
+# heatmap
+pheatmap::pheatmap(df, cutree_rows = 4)
+
+
+profiling <- cutree(df, 4)
+
+# deviation from average for all variables for each cluster
+# estimate mean of all variables; estimate mean for each cluster; estimate difference between total and cluster means; plot
+
+
 ```
 
 Density is used as an illustrative variable \[include it in the mapping?\]

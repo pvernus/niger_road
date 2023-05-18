@@ -1,3 +1,7 @@
+install.packages('installr')
+# installr()
+# install.RStudio()
+
 if (!require("qgisprocess")) remotes::install_github("paleolimbot/qgisprocess")
 if (!require("dggridR")) devtools::install_github("r-barnes/dggridR", vignette=TRUE)
 if (!require("rhdx")) remotes::install_github("dickoa/rhdx")
@@ -70,6 +74,13 @@ pacman::p_load(
   # cluster
   cluster,
   stats,
-  divseg
+  divseg,
+  ppsr,
+  corrr,
+  ggcorrplot,
+  FactoMineR,
+  factoextra,
+  GGally,
+  ggforce
 )
 
