@@ -77,6 +77,7 @@ pacman::p_load(
   divseg,
   ppsr,
   corrr,
+  corrplot,
   ggcorrplot,
   FactoMineR,
   factoextra,

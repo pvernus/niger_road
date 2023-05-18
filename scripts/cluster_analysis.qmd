@@ -11,7 +11,7 @@ Spatial gridding
 # Select the set of variables
 
 ```{r}
-# save(agric_a, cluster_data, food_employment, s16a_me_agric, conso_agg, survey_welfare, s04_me_employment, survey_ind, cluster_data, wt_cluster_data, file = 'scripts/cluster_analysis.RData')
+# save(agric_a, cluster_data, food_employment, s16a_me_agric, conso_agg, survey_welfare, s04_me_employment, survey_ind, cluster_data, wt_cluster_data, file = 'data/cluster_analysis.RData')
 load(here('data','short_survey.RData'))
 load(here('data','conso_survey.RData'))
 load(here('data','full_survey.RData'))
@@ -369,21 +369,23 @@ Objective: account for local creation and reinforcement of vulnerability
 ## Correlation matrix
 
 ```{r}
-cluster_df <- wt_cluster_data |> select(-id_adm2)
-cluster_norm <- scale(cluster_df)
+
+cluster_df <- column_to_rownames(wt_cluster_data |> 
+                                   select(-hh_male), var = "id_adm2")
+
+cluster_norm <- cluster_df |> mutate(across(where(is.numeric), scale))
 
 GGally::ggpairs(cluster_df)
 ppsr::visualize_pps(cluster_df)
 
-corr_matrix <- cor(cluster_df)
+corr_matrix <- cor(cluster_norm)
 score_matrix <- score_matrix(cluster_df)
 cov_matrix <- cov(cluster_df)
 
 ggcorrplot(corr_matrix)
 
 tmwr_cols <- colorRampPalette(c("#91CBD765", "#CA225E"))
-cluster_df %>% 
-  cor() %>% 
+corr_matrix %>% 
   corrplot(col = tmwr_cols(200), tl.col = "black", method = "ellipse")
 
 ```
@@ -391,21 +393,30 @@ cluster_df %>%
 ## PCA
 
 ```{r}
-data_pca <- princomp(corr_matrix)
+data_pca <- princomp(cluster_norm)
 summary(data_pca)
-
+data_scores <- data_pca$scores[, 1:4]
+# Kaizer criterion: keep eigenvalue PC > 1
+data_pca$sdev ^ 2
 # loadings of each principal component
-data_pca$loadings[, 1:2]
+data_pca$loadings[, 1:4]
+
+res.pca <- PCA(cluster_norm, graph = FALSE)
+summary(res.pca)
+res.scores <- res.pca$ind$coord[, 1:4]
+# Kaizer criterion: keep eigenvalue PC > 1
+res.pca$eig[,1]^2
 
 # scree plot
-fviz_eig[data_pca, addlabels = TRUE]
+fviz_eig(data_pca, addlabels = TRUE)
+
 # biplot of the attributes
 fviz_pca_var(data_pca, col.var = "black")
 # contribution of each variable (cos2 = quality of representation)
 fviz_cos2(data_pca, choice = "var", axes = 1:2)
 # biplot combined with cos2
 fviz_pca_var(data_pca, col.var = "cos2",
-             gradient.cols = c("black", "orange", "green"),
+             gradient.cols = c("grey", "orange", "red"),
              repel = TRUE)
 
 
@@ -415,17 +426,24 @@ fviz_pca_var(data_pca, col.var = "cos2",
 
 Ward's method
 
-```{r}
-md <- daisy(factor_scores) # dist() distance matrix
+```{r distance}
 
-tree <- hclust(md, method = "ward.D2")
+data_dist <- dist(data_scores, method = "euclidian") # distance matrix
+data_daisy <- daisy(data_scores)
 
-plot(tree, labels = FALSE, main = "Dendrogramme")
-fviz(tree, cex = .5)
+res.dist <- dist(res.scores, method = "euclidian")
+res.daisy <- daisy(res.scores)
+
+```
+
+```{r hcluster}
+
+data_tree <- hclust(data_dist, method = "ward.D2")
+res.tree <- hclust(res.dist, method = "ward.D2")
 
 # measure how well the cluster tree reflects the data: compute correlation between the cophenetic distances and the distance matrix (i.e. here factor scores); high correlation means high accuracy of the clustering solution.
 tree_coph <- cophenetic(tree)
-cor(factor_scores, tree_coph)
+cor(data_dist, tree_coph)
 # test different distance methods
 
 # cut and visualize tree into clusters
@@ -443,10 +461,30 @@ require("igraph")
 fviz_dend(tree, k = 4, k_colors = "jco", type = "phylogenic", repel = TRUE)
 
 # heatmap
-pheatmap::pheatmap(df, cutree_rows = 4)
+pheatmap::pheatmap(data_dist, cutree_rows = 4)
 
 
-profiling <- cutree(df, 4)
+cluster <- cutree(data_tree, k = 4)
+cluster_tree <- data.frame(cluster, cluster_df)
+
+# rownames(cluster_norm)[cluster == 1]
+
+# estimate mean of all variables
+mean_total <- bind_rows(map(cluster_df, mean))
+
+# estimate mean for each cluster
+mean_cluster <- cluster_tree |> 
+  group_by(cluster) |> 
+  summarize(across(where(is.numeric), ~ mean(.x, na.rm = TRUE)))
+
+# estimate difference between total and cluster means
+mean_all <- bind_rows(mean_total, mean_cluster)
+
+1:4 %>%
+  walk(function(profiling) {
+    mean_cluster - mean_all
+  })
+
 
 # deviation from average for all variables for each cluster
 # estimate mean of all variables; estimate mean for each cluster; estimate difference between total and cluster means; plot
