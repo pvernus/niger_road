@@ -77,8 +77,7 @@ grid3_settlement <- pull_dataset("grid3-niger-settlement-extents-version-01-01")
   read_resource() %>% 
   clean_names() %>% 
   mutate(id_adm1 = adm1_pcode, # create primary key
-         id_adm2 = adm2_pcode, # create foreign keys
-         id_adm3 = adm3_pcode
+         id_adm2 = adm2_pcode # create foreign keys
   ) %>% 
   relocate(starts_with("id_"), .before = "adm1_pcode")
 

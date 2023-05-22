@@ -4,7 +4,7 @@ load("data/ner_adm.RData")
 ## sf_use_s2(FALSE)
 
 # rename Shape to geometry
-# st_geometry(grid3_settlement) <- "geometry"
+st_geometry(grid3_settlement) <- "geometry"
 # change GEOMETRY to MULTIPOLYGONS
 grid3 <- st_cast(grid3_settlement, "MULTIPOLYGON")
 # Make geometry valid, geos_method is used to overcome Ring Self-intersection issue

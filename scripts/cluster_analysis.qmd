@@ -11,7 +11,7 @@ Spatial gridding
 # Select the set of variables
 
 ```{r}
-# save(agric_a, cluster_data, food_employment, s16a_me_agric, conso_agg, survey_welfare, s04_me_employment, survey_ind, cluster_data, wt_cluster_data, file = 'data/cluster_analysis.RData')
+# save(hh_food_prod, cluster_data, food_employment, s16a_me_agric, conso_agg, survey_welfare, s04_me_employment, survey_ind, cluster_data, wt_cluster_data, mean_cluster_list, file = 'data/cluster_analysis.RData')
 load(here('data','short_survey.RData'))
 load(here('data','conso_survey.RData'))
 load(here('data','full_survey.RData'))
@@ -21,9 +21,7 @@ load(here('data','short_survey.RData'))
 +--------------+-------------------------------------------------------------------------------------+---------------------------+-------------+
 | Dimension    | Indicator                                                                           | Variable name             | Data source |
 +==============+=====================================================================================+===========================+=============+
-| Potential    | Geo-physical characteristics                                                        | zae                       | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Agroecological zones (binomial)                                                     |                           |             |
+| Potential    | Agroecological zones (binomial)                                                     | zae                       | EHCVM 2018  |
 |              |                                                                                     |                           |             |
 |              | Cropland extent                                                                     |                           |             |
 +--------------+-------------------------------------------------------------------------------------+---------------------------+-------------+
@@ -80,11 +78,11 @@ load(here('data','short_survey.RData'))
 |              | Difficultes depenses frais de scolarite enfants s20q11                              |                           |             |
 +--------------+-------------------------------------------------------------------------------------+---------------------------+-------------+
 
-```{r availability}
+```{r hh_food_prod}
 
-### Food agriculture ###
+### Households' food production ###
 
-agric_a <- s16a_me_agric %>% 
+hh_food_prod <- s16a_me_agric %>% 
   select(vague, grappe, menage, s16aq02, s16aq07, s16aq08, s16aq09a, s16aq09b) %>% 
   rename(champ = s16aq02,
          nb_culture = s16aq07,
@@ -102,23 +100,22 @@ agric_a <- s16a_me_agric %>%
 
 # note: 3615 households, out of the 6024 in the sample, are included. The majority are rural households.
 
-### Cultivated area per HH ###
-# note: we build a first dataset at the household level with the variables we plan to aggregate at the ADM-2 level based on the survey design (weighted estimates).
+## Cultivated area per HH ##
 
-cultivated_area <- agric_a %>%
+cultivated_area <- hh_food_prod %>%
   select(hhid, superficie_ha) %>% 
   group_by(hhid) %>% 
   summarize(hh_total_superf = sum(superficie_ha)) %>% # total cultivated area per HH
   ungroup() %>% 
   mutate(
-    hh_total_superf = if_else(is.na(hh_total_superf), 0, hh_total_superf),
+    hh_total_superf = if_else(is.na(hh_total_superf), 0, scale(hh_total_superf)),
     hh_superf_percent_rank = percent_rank(hh_total_superf)
     ) %>% 
   select(hhid, hh_total_superf, hh_superf_percent_rank)
 
-### Diversity of cultivated crops per HH ###
+## Diversity of cultivated crops per HH ##
 
-crop_diversity <- agric_a %>% 
+crop_diversity <- hh_food_prod %>% 
   select(hhid, princ_culture, superficie_ha) %>% 
   pivot_wider(names_from = princ_culture, values_from = superficie_ha, 
               values_fn = sum, names_prefix = "i_", values_fill = 0) %>% 
@@ -127,6 +124,9 @@ crop_diversity <- agric_a %>%
   ungroup() %>% 
   select(hhid, crops_diversity)
 
+```
+
+```{r food_employment}
 
 ### Food employment ###
 
@@ -238,7 +238,9 @@ food_fte <- food_employment %>%
   rowwise() %>% 
   mutate(fte_total = sum(c(fte_agriculture, fte_processing, fte_marketing, fte_away_home))) %>% 
   ungroup()
+```
 
+```{r food_consumption}
 
 ### Food Consumption ### 
 
@@ -250,8 +252,11 @@ food_consumption <- survey_welfare %>%
   ) %>% 
   select(hhid, fcons_pc, fcons_pc_percentile_rank, sh_fcons)
 
-### Food Consumption score ###        
-              
+### Food Consumption score ### 
+```
+
+```{r hh_char}
+
 ### HH characteristics ###  
 
 hh_characteristics <- survey_welfare %>% 
@@ -266,6 +271,9 @@ hh_characteristics <- survey_welfare %>%
          h_unemploy = if_else(h_unemploy==1 | h_unemploy==2, 1, 0)
          ) %>% # male=0, female=1
   select(hhid, h_literacy, h_gender, h_handicap, h_unemploy)
+```
+
+```{r merge_data}
 
 # Combine all dataframes in a new dataset
 cluster_data <- survey_welfare %>% 
@@ -275,6 +283,9 @@ cluster_data <- survey_welfare %>%
   left_join(food_fte, by = "hhid") %>% 
   left_join(food_consumption, by = "hhid") %>% 
   left_join(hh_characteristics, by = "hhid")
+```
+
+```{r weighted_data}
 
 # Survey design
 survey_design <- cluster_data %>% 
@@ -339,7 +350,7 @@ wt_h_unemploy <- survey_design %>%
   select(id_adm2, hh_unemploy) %>% 
   ungroup()
 
-
+# Merge all weighted data in a single data set
 wt_cluster_data <- wt_sh_fcons %>% 
   left_join(wt_crop_production, by = "id_adm2") %>% 
   left_join(wt_empl_food, by = "id_adm2") %>% 
@@ -354,12 +365,22 @@ wt_cluster_data <- wt_cluster_data %>%
   mutate(across(hh_male:hh_unemploy, \(x) replace_na(x, 0)))
 
 # Add labels to new variables
-var_label(survey_design) <- list(
-  cultivated_area = "Percent rank at the country-level of the total area cultivated by households",
-  crops_diversity = "Simpson index of the crops cultivated by households"
+var_label(wt_cluster_data) <- list(
+  id_adm2 = "ID ADM-2",
+  sh_food_cons = "Average share of food consumption in households' total expenditures",
+  food_cons_pc = "Average percentile rank at the country-level of households' food consumption per capita",
+  crops_diversity = "Food crops diversity cultivated by households (Simpson Index)",
+  cultivated_area = "Average percentile rank at the country-level of households' cultivated area",
+  empl_food_agriculture = "Avarage share of food agriculture jobs in food employment at the ADM-2 level",
+  empl_food_processing = "Avarage share of food processing jobs in food employment at the ADM-2 level",
+  empl_food_marketing = "Avarage share of food marketing jobs in food employment at the ADM-2 level",
+  empl_food_away_home = "Avarage share of food away-from-home jobs in food employment at the ADM-2 level",
+  hh_female = "Average share of female-led households at the ADM-2 level",
+  hh_literacy = "Average share of household heads who knows how to read",
+  hh_handicap = "Average share of household heads with an handicap",
+  hh_unemploy = "Average share of household heads who are unemployed"
 )
 
-var_label(survey_design$total_superf_percent_rank)
 ```
 
 # Vulnerability profiles
@@ -368,7 +389,7 @@ Objective: account for local creation and reinforcement of vulnerability
 
 ## Correlation matrix
 
-```{r}
+```{r corr_matrix}
 
 cluster_df <- column_to_rownames(wt_cluster_data |> 
                                    select(-hh_male), var = "id_adm2")
@@ -392,7 +413,8 @@ corr_matrix %>%
 
 ## PCA
 
-```{r}
+```{r pca}
+
 data_pca <- princomp(cluster_norm)
 summary(data_pca)
 data_scores <- data_pca$scores[, 1:4]
@@ -419,7 +441,6 @@ fviz_pca_var(data_pca, col.var = "cos2",
              gradient.cols = c("grey", "orange", "red"),
              repel = TRUE)
 
-
 ```
 
 ## Hierarchical clustering
@@ -442,12 +463,12 @@ data_tree <- hclust(data_dist, method = "ward.D2")
 res.tree <- hclust(res.dist, method = "ward.D2")
 
 # measure how well the cluster tree reflects the data: compute correlation between the cophenetic distances and the distance matrix (i.e. here factor scores); high correlation means high accuracy of the clustering solution.
-tree_coph <- cophenetic(tree)
+tree_coph <- cophenetic(data_tree)
 cor(data_dist, tree_coph)
 # test different distance methods
 
 # cut and visualize tree into clusters
-fviz_dend(tree, k = 4, # cut in four groups
+fviz_dend(data_tree, k = 4, # cut in four groups
      cex = .5, # label size
      horiz = TRUE,
      k_colors = "jco", # other option: c("#2E9FDF", "#00AFBB", "E7B800", "#FC4E07")
@@ -463,32 +484,38 @@ fviz_dend(tree, k = 4, k_colors = "jco", type = "phylogenic", repel = TRUE)
 # heatmap
 pheatmap::pheatmap(data_dist, cutree_rows = 4)
 
-
+# Cut dataframe by cluster
 cluster <- cutree(data_tree, k = 4)
 cluster_tree <- data.frame(cluster, cluster_df)
 
 # rownames(cluster_norm)[cluster == 1]
 
 # estimate mean of all variables
-mean_total <- bind_rows(map(cluster_df, mean))
+mean_total <- bind_rows(map(cluster_df, mean)) %>% 
+  pivot_longer(everything())
 
 # estimate mean for each cluster
 mean_cluster <- cluster_tree |> 
   group_by(cluster) |> 
-  summarize(across(where(is.numeric), ~ mean(.x, na.rm = TRUE)))
+  summarize(across(where(is.numeric), ~ mean(.x, na.rm = TRUE))) %>% 
+  mutate(cluster = as.factor(cluster))
+  
+mean_cluster_list <- split(mean_cluster, 1:nrow(mean_cluster))
+mean_cluster_list <- lapply(mean_cluster_list, function(df) pivot_longer(df, !cluster))
+       
+mean_cluster_list <- lapply(mean_cluster_list, function(df) merge(df, mean_total, by = "name", suffixes = c(".cluster",".total")))
 
 # estimate difference between total and cluster means
-mean_all <- bind_rows(mean_total, mean_cluster)
-
-1:4 %>%
-  walk(function(profiling) {
-    mean_cluster - mean_all
-  })
-
+mean_cluster_list <- lapply(mean_cluster_list, function(df) mutate(df, diff = value.total - value.cluster))
 
 # deviation from average for all variables for each cluster
-# estimate mean of all variables; estimate mean for each cluster; estimate difference between total and cluster means; plot
-
+lapply(mean_cluster_list, function(df) df %>% 
+  ggplot(aes(x=name, y=diff)) +
+    geom_bar(stat = "identity", fill=rgb(0.1,0.4,0.5,0.7)) +
+    coord_flip() +
+    labs(x = "Factor", y = "Deviation from average profile") +
+    theme_minimal()
+  )
 
 ```
 
@@ -497,6 +524,22 @@ Density is used as an illustrative variable \[include it in the mapping?\]
 # GIS / spatial analysis
 
 Objective: map the spatial distribution of each vulnerability profile and compare them to various hazards.
+
+```{r map_cluster}
+
+cluster_sf <- rownames_to_column(cluster_tree, var = "id_adm2") %>% right_join(adm02, by = "id_adm2") %>% st_as_sf()
+
+tm_shape(cluster_sf) + 
+  tm_polygons(col = "cluster")
+
+cluster_sttl_sf <- rownames_to_column(cluster_tree, var = "id_adm2") %>% select(id_adm2, cluster) %>% right_join(grid3_settlement, by = "id_adm2") %>% st_as_sf()
+
+tm_shape(cluster_sf) + 
+  tm_polygons(col = "cluster")
+tm_shape(cluster_sttl_sf) + 
+  tm_polygons(col = "pop_un_adj")
+
+```
 
 ## Spatial clustering (spatial autocorrelation)
 
