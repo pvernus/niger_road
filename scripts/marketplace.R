@@ -1,11 +1,16 @@
 source("scripts/library.R") # load packages
 source("R/functions.R") # load functions
 
-load("data/network.RData")
+# load("data/network.RData")
 # load("data/marketplace.RData")
 # load("data/ner_adm.RData")
 
-osm_marketplace <- opq(bbox = c(-0.5,11.16,16.42,23.7)) %>%
+# niger <- opq_osm_id (id = 192786, type = "relation") %>% opq_string () %>% osmdata_sf ()
+# osm_marketplace <- opq(bbox = c(-0.5,11.16,16.42,23.7)) 
+
+bb <- getbb("Niger", featuretype = "country")
+osm_marketplace <- bb %>%
+  opq() %>% 
   add_osm_feature(key = 'amenity', value = 'marketplace') %>% 
   osmdata_sf()
 
@@ -23,7 +28,9 @@ marketplace_sf <- st_join(marketplace_adm, adm03) %>%
 
 ## Key = 'landuse', value = 'retail'
 
-osm_landuse_retail <- opq(bbox = c(-0.5,11.16,16.42,23.7)) %>%
+bb <- getbb("Niger", featuretype = "country")
+osm_landuse_retail <- bb %>%
+  opq() %>% 
   add_osm_feature(key = 'landuse', value = 'retail') %>% 
   osmdata_sf()
 
@@ -40,7 +47,9 @@ landuse_retail_sf <- st_join(landuse_retail_adm, adm03) %>%
 
 ## Key = 'shop', value = 'supermarket'
 
-osm_shop_supermarket <- opq(bbox = c(-0.5,11.16,16.42,23.7)) %>%
+bb <- getbb("Niger", featuretype = "country")
+osm_shop_supermarket <- bb %>%
+  opq() %>% 
   add_osm_feature(key = 'shop', value = 'supermarket') %>% 
   osmdata_sf()
 
