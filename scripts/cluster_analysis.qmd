@@ -4,10 +4,6 @@ format: html
 editor: visual
 ---
 
-Spatial interpolation
-
-Spatial gridding
-
 # Select the set of variables
 
 ```{r}
@@ -15,68 +11,86 @@ Spatial gridding
 load(here('data','short_survey.RData'))
 load(here('data','conso_survey.RData'))
 load(here('data','full_survey.RData'))
-load(here('data','short_survey.RData'))
 ```
 
-+--------------+-------------------------------------------------------------------------------------+---------------------------+-------------+
-| Dimension    | Indicator                                                                           | Variable name             | Data source |
-+==============+=====================================================================================+===========================+=============+
-| Potential    | Agroecological zones (binomial)                                                     | zae                       | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Cropland extent                                                                     |                           |             |
-+--------------+-------------------------------------------------------------------------------------+---------------------------+-------------+
-| Availability | Crop food production                                                                | total_superf_percent_rank | SPAM        |
-|              |                                                                                     |                           |             |
-|              | Percentile rank of cultivated area by HH                                            | crops_diversity           | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Diversity of cultivated crops by HH (Simpson index)                                 | empl_food_agriculture     | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Distance to market                                                                  | empl_food_processing      | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Distance to the road (RN1, others);                                                 |                           | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Food agriculture employment (%)                                                     |                           |             |
-|              |                                                                                     |                           |             |
-|              | Food processing employment (%)                                                      |                           |             |
-+--------------+-------------------------------------------------------------------------------------+---------------------------+-------------+
-| Access       | Local HH crop food production (perc rank)                                           | empl_food_away_home       | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Distance to market                                                                  | fcons_pc                  | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Distance to the road (RN1, others);                                                 | fcons_sh                  | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Milieu (urban/rural)                                                                |                           | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Food-away-from-home employment (%)                                                  |                           | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Food consumption per capita (perc rank)                                             |                           | EHCVM 2018  |
-|              |                                                                                     |                           |             |
-|              | Share of food in total consumption                                                  |                           |             |
-|              |                                                                                     |                           |             |
-|              | Share of auto-consumption in total cons.                                            |                           |             |
-|              |                                                                                     |                           |             |
-|              | Share of women Hh                                                                   |                           |             |
-|              |                                                                                     |                           |             |
-|              | Conflict intensity index                                                            |                           |             |
-+--------------+-------------------------------------------------------------------------------------+---------------------------+-------------+
-| Utilization  | Food Consumption Score (FCS)                                                        |                           |             |
-|              |                                                                                     |                           |             |
-|              | Household Dietary Diversity Scale (HDDS)                                            |                           |             |
-|              |                                                                                     |                           |             |
-|              | Infant anthropometry (DHS, LSMS)                                                    |                           |             |
-|              |                                                                                     |                           |             |
-|              | HH characteristics (Hh age, Hh gender, income, etc.)                                |                           |             |
-|              |                                                                                     |                           |             |
-|              | Distance to / \# of schools (WB)                                                    |                           |             |
-|              |                                                                                     |                           |             |
-|              | Distance to / \# of pharmacy (WB)                                                   |                           |             |
-|              |                                                                                     |                           |             |
-|              | Distance principale srce d'approv eau de boisson saison seche s11q28; pluies s11q30 |                           |             |
-|              |                                                                                     |                           |             |
-|              | Difficultes depenses maladie s20q13\_\_9;                                           |                           |             |
-|              |                                                                                     |                           |             |
-|              | Difficultes depenses frais de scolarite enfants s20q11                              |                           |             |
-+--------------+-------------------------------------------------------------------------------------+---------------------------+-------------+
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+| Dimension    | Type           | Indicator                                                                             | Variable name             | Data source |
++==============+================+=======================================================================================+===========================+=============+
+| Potential    | Geo-physical   | X Agroecological zones (binomial)                                                     | zae                       | EHCVM 2018  |
+|              |                |                                                                                       |                           |             |
+|              |                | Cropland extent                                                                       |                           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | Altitude                                                                              |                           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Milieu (urban/rural)                                                                |                           |             |
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+| Availability | Geo-physical   | Crop food production                                                                  |                           | SPAM        |
+|              |                |                                                                                       |                           |             |
+|              |                |                                                                                       |                           | EHCVM 2018  |
+|              |                |                                                                                       |                           |             |
+|              |                |                                                                                       |                           | EHCVM 2018  |
+|              |                |                                                                                       |                           |             |
+|              |                |                                                                                       |                           | EHCVM 2018  |
+|              |                |                                                                                       |                           |             |
+|              |                |                                                                                       |                           | EHCVM 2018  |
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+|              | Infrastructure |                                                                                       |                           |             |
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+|              | Socio-economic | Crop food production (total and main crops)                                           | crop_production_total     | SPAM        |
+|              |                |                                                                                       |                           |             |
+|              |                | Crop food production diversity                                                        | crop_food_production\_\*  | EHCVM 2018  |
+|              |                |                                                                                       |                           |             |
+|              |                | Cultivated area by HH                                                                 | crop_production_diversity |             |
+|              |                |                                                                                       |                           |             |
+|              |                | Diversity of cultivated crops by HH (Simpson index)                                   | cultivated_area           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | Food agriculture employment (%)                                                       | empl_food_agriculture     |             |
+|              |                |                                                                                       |                           |             |
+|              |                | Food processing employment (%)                                                        | empl_food_processing      |             |
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+| Access       | Infrastructure | X Distance to market                                                                  |                           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Distance to the road (RN1, others)                                                  |                           |             |
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+|              | Socio-economic | Food-away-from-home employment (%)                                                    | empl_food_away_home       | EHCVM 2018  |
+|              |                |                                                                                       |                           |             |
+|              |                | Food consumption per capita                                                           | fcons_pc                  |             |
+|              |                |                                                                                       |                           |             |
+|              |                | Share of food in total consumption                                                    | fcons_sh                  |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Share of auto-consumption in total cons.                                            | hh_gender                 |             |
+|              |                |                                                                                       |                           |             |
+|              |                | Share of women Hh                                                                     | hh_unemploy               |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Conflict intensity index                                                            |                           |             |
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+| Utilization  | Infrastructure | X Distance to / \# of schools (WB)                                                    |                           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Distance to / \# of pharmacy (WB)                                                   |                           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Distance principale srce d'approv eau de boisson saison seche s11q28; pluies s11q30 |                           |             |
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+|              | Socio-economic | X Food Consumption Score (FCS)                                                        | hh_gender                 |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Household Dietary Diversity Scale (HDDS)                                            | hh_literacy               |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Infant anthropometry (DHS, LSMS)                                                    |                           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | HH characteristics (Hh age, Hh gender, income, etc.)                                  |                           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Difficultes depenses maladie s20q13\_\_9;                                           |                           |             |
+|              |                |                                                                                       |                           |             |
+|              |                | X Difficultes depenses frais de scolarite enfants s20q11                              |                           |             |
++--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+
+```{r agriculture}
+
+dist_agric <- s03_co_agric |> 
+  select(grappe, vague, dist_eqp_ag = s03q07, dist_seed = s03q09,
+         dist_org_fertilizer = s03q11, dist_chem_fertilizer = s03q13, 
+         dist_pest = s03q15)
+dist_agric |> vis_miss() # too many missing observations
+```
 
 ```{r hh_food_prod}
 
@@ -92,6 +106,7 @@ hh_food_prod <- s16a_me_agric %>%
          unit_superf = if_else(s16aq09a > 4000, 2, unit_superf), # treatment of outliers
          superficie_ha = if_else(unit_superf == 2, s16aq09a/10000, s16aq09a) # convert sqrm to ha
          ) %>% 
+  mutate(superficie_ha = if_else(is.na(superficie_ha), 0, superficie_ha)) |> 
   filter(!princ_culture == 'NA') %>% 
   left_join(survey_welfare %>% select(hhid, id_adm1, id_adm2, vague, grappe, menage, zae, region, milieu, hhweight, hhsize), by = c("vague", "grappe", "menage")) %>% 
   mutate(zae = as_factor(zae),
@@ -107,11 +122,8 @@ cultivated_area <- hh_food_prod %>%
   group_by(hhid) %>% 
   summarize(hh_total_superf = sum(superficie_ha)) %>% # total cultivated area per HH
   ungroup() %>% 
-  mutate(
-    hh_total_superf = if_else(is.na(hh_total_superf), 0, scale(hh_total_superf)),
-    hh_superf_percent_rank = percent_rank(hh_total_superf)
-    ) %>% 
-  select(hhid, hh_total_superf, hh_superf_percent_rank)
+  mutate(hh_total_superf = if_else(is.na(hh_total_superf), 0, hh_total_superf)) %>%
+  select(hhid, hh_total_superf)
 
 ## Diversity of cultivated crops per HH ##
 
@@ -120,9 +132,9 @@ crop_diversity <- hh_food_prod %>%
   pivot_wider(names_from = princ_culture, values_from = superficie_ha, 
               values_fn = sum, names_prefix = "i_", values_fill = 0) %>% 
   group_by(hhid) %>% 
-  summarize(crops_diversity = simpson(starts_with('i_'))) %>% # simpson index (one crop = 1, more crops --> 0) 
+  summarize(crop_diversity = simpson(starts_with('i_'))) %>% # simpson index (one crop = 1, more crops --> 0) 
   ungroup() %>% 
-  select(hhid, crops_diversity)
+  select(hhid, crop_diversity)
 
 ```
 
@@ -238,6 +250,7 @@ food_fte <- food_employment %>%
   rowwise() %>% 
   mutate(fte_total = sum(c(fte_agriculture, fte_processing, fte_marketing, fte_away_home))) %>% 
   ungroup()
+
 ```
 
 ```{r food_consumption}
@@ -267,22 +280,25 @@ hh_characteristics <- survey_welfare %>%
     h_unemploy = hactiv12m 
   ) %>% 
   mutate(across(starts_with("h_"), as.factor),
-         h_gender = if_else(h_gender==2, 1, 0),
+         h_gender = if_else(h_gender==2, 0, 1),
          h_unemploy = if_else(h_unemploy==1 | h_unemploy==2, 1, 0)
          ) %>% # male=0, female=1
   select(hhid, h_literacy, h_gender, h_handicap, h_unemploy)
 ```
 
-```{r merge_data}
+```{r merged_data}
 
 # Combine all dataframes in a new dataset
-cluster_data <- survey_welfare %>% 
+merged_data <- survey_welfare %>% 
   select(hhid, grappe, region, zae, hhweight, id_adm1, id_adm2) %>% 
   left_join(cultivated_area, by = "hhid") %>% 
   left_join(crop_diversity, by = "hhid") %>% 
+  mutate(crop_diversity = if_else(is.na(crop_diversity), 0, crop_diversity),
+         hh_total_superf = if_else(is.na(hh_total_superf), 0, hh_total_superf)) |> 
   left_join(food_fte, by = "hhid") %>% 
   left_join(food_consumption, by = "hhid") %>% 
   left_join(hh_characteristics, by = "hhid")
+
 ```
 
 ```{r weighted_data}
@@ -383,6 +399,52 @@ var_label(wt_cluster_data) <- list(
 
 ```
 
+```{r cluster_data}
+
+cluster_survey_data <- merged_data |> 
+  mutate(across(c(h_literacy, h_handicap), \(x) as.numeric(levels(x)[x]))) |> 
+  group_by(grappe) |> 
+  summarize(
+    sh_food_cons = mean(sh_fcons, na.rm = TRUE), # food consumption
+    food_cons_pc = mean(fcons_pc, na.rm = TRUE),
+    crop_diversity = mean(crop_diversity, na.rm = TRUE), # auto-production
+    cultivated_area = mean(hh_total_superf, na.rm = TRUE),
+    empl_food_agriculture = sum(fte_agriculture)/sum(fte_total), # food empl
+    empl_food_processing = sum(fte_processing)/sum(fte_total),
+    empl_food_marketing = sum(fte_marketing)/sum(fte_total),
+    empl_food_away_home = sum(fte_away_home)/sum(fte_total),
+    hh_literacy = sum(h_literacy) / length(h_literacy), # head of HH charastest.
+    hh_handicap = sum(h_handicap) / length(h_handicap),
+    hh_gender = sum(h_gender) / length(h_gender),
+    hh_unemploy = sum(h_unemploy) / length(h_unemploy)
+  )
+
+cluster_data <- cluster_survey_data |> 
+  left_join(crop_production, by = "grappe") |> 
+  left_join(cropland |> select(grappe, cropland, cropland_change_1519), by = "grappe") |> 
+  mutate_all(\(x) if_else(is.na(x), 0, x))
+  
+```
+
+```{r labels}
+# Add labels to new variables
+var_label(cluster_data) <- list(
+  grappe = "Grappe/Communauté",
+  sh_food_cons = "Average share of food consumption in households' total expenditures",
+  food_cons_pc = "Average percentile rank at the country-level of households' food consumption per capita",
+  crop_diversity = "Food crops diversity cultivated by households (Simpson Index)",
+  cultivated_area = "Average percentile rank at the country-level of households' cultivated area",
+  empl_food_agriculture = "Avarage share of food agriculture jobs in food employment at the ADM-2 level",
+  empl_food_processing = "Avarage share of food processing jobs in food employment at the ADM-2 level",
+  empl_food_marketing = "Avarage share of food marketing jobs in food employment at the ADM-2 level",
+  empl_food_away_home = "Avarage share of food away-from-home jobs in food employment at the ADM-2 level",
+  hh_gender = "Average share of male-led households",
+  hh_literacy = "Average share of household heads who knows how to read",
+  hh_handicap = "Average share of household heads with an handicap",
+  hh_unemploy = "Average share of household heads who are unemployed"
+)
+```
+
 # Vulnerability profiles
 
 Objective: account for local creation and reinforcement of vulnerability
@@ -391,15 +453,14 @@ Objective: account for local creation and reinforcement of vulnerability
 
 ```{r corr_matrix}
 
-cluster_df <- column_to_rownames(wt_cluster_data |> 
-                                   select(-hh_male), var = "id_adm2")
-
-cluster_norm <- cluster_df |> mutate(across(where(is.numeric), scale))
+cluster_df <- column_to_rownames(cluster_data, var = "grappe")
+cluster_norm <- scale(cluster_df) |> 
+  as.data.frame()
 
 GGally::ggpairs(cluster_df)
 ppsr::visualize_pps(cluster_df)
 
-corr_matrix <- cor(cluster_norm)
+corr_matrix <- cor(scale(cluster_df))
 score_matrix <- score_matrix(cluster_df)
 cov_matrix <- cov(cluster_df)
 
@@ -409,6 +470,19 @@ tmwr_cols <- colorRampPalette(c("#91CBD765", "#CA225E"))
 corr_matrix %>% 
   corrplot(col = tmwr_cols(200), tl.col = "black", method = "ellipse")
 
+PerformanceAnalytics::chart.Correlation(cluster_df, method = "pearson")
+PerformanceAnalytics::chart.Correlation(cluster_norm, method = "pearson")
+
+# heatmap
+heatmap(corr_matrix, scale = "none")
+
+col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(256)
+heatmap(corr_matrix, scale = "none", col =  rev(col))
+
+pheatmap(corr_matrix, cutree_rows = 4)
+
+# gplots::heatmap.2(corr_matrix, scale = "none", col = bluered(100),t race = "none", density.info = "none")
+
 ```
 
 ## PCA
@@ -417,15 +491,15 @@ corr_matrix %>%
 
 data_pca <- princomp(cluster_norm)
 summary(data_pca)
-data_scores <- data_pca$scores[, 1:4]
+data_scores <- data_pca$scores[, 1:5]
 # Kaizer criterion: keep eigenvalue PC > 1
 data_pca$sdev ^ 2
 # loadings of each principal component
-data_pca$loadings[, 1:4]
+data_pca$loadings[, 1:5]
 
 res.pca <- PCA(cluster_norm, graph = FALSE)
 summary(res.pca)
-res.scores <- res.pca$ind$coord[, 1:4]
+res.scores <- res.pca$ind$coord[, 1:5]
 # Kaizer criterion: keep eigenvalue PC > 1
 res.pca$eig[,1]^2
 
@@ -468,7 +542,11 @@ cor(data_dist, tree_coph)
 # test different distance methods
 
 # cut and visualize tree into clusters
-fviz_dend(data_tree, k = 4, # cut in four groups
+
+
+# graph visualization
+require("igraph")
+fviz_dend(data_tree, k = 3, # cut in four groups
      cex = .5, # label size
      horiz = TRUE,
      k_colors = "jco", # other option: c("#2E9FDF", "#00AFBB", "E7B800", "#FC4E07")
@@ -476,22 +554,17 @@ fviz_dend(data_tree, k = 4, # cut in four groups
      rect_border = "jco",
      rect_fill = TRUE
 )
-
-# graph visualization
-require("igraph")
-fviz_dend(tree, k = 4, k_colors = "jco", type = "phylogenic", repel = TRUE)
-
 # heatmap
-pheatmap::pheatmap(data_dist, cutree_rows = 4)
+pheatmap::pheatmap(data_dist, cutree_rows = 3)
 
 # Cut dataframe by cluster
-cluster <- cutree(data_tree, k = 4)
-cluster_tree <- data.frame(cluster, cluster_df)
+cluster <- cutree(data_tree, k = 3)
+cluster_tree <- data.frame(cluster, cluster_norm)
 
 # rownames(cluster_norm)[cluster == 1]
 
 # estimate mean of all variables
-mean_total <- bind_rows(map(cluster_df, mean)) %>% 
+mean_total <- bind_rows(map(cluster_norm, mean)) %>% 
   pivot_longer(everything())
 
 # estimate mean for each cluster
@@ -506,16 +579,30 @@ mean_cluster_list <- lapply(mean_cluster_list, function(df) pivot_longer(df, !cl
 mean_cluster_list <- lapply(mean_cluster_list, function(df) merge(df, mean_total, by = "name", suffixes = c(".cluster",".total")))
 
 # estimate difference between total and cluster means
-mean_cluster_list <- lapply(mean_cluster_list, function(df) mutate(df, diff = value.total - value.cluster))
+mean_cluster_list <- lapply(mean_cluster_list, function(df) mutate(df, diff = value.cluster - value.total))
 
 # deviation from average for all variables for each cluster
-lapply(mean_cluster_list, function(df) df %>% 
-  ggplot(aes(x=name, y=diff)) +
-    geom_bar(stat = "identity", fill=rgb(0.1,0.4,0.5,0.7)) +
+lapply(mean_cluster_list, function(df)
+  ggplot(df) +
+    geom_bar(aes(reorder(name, diff), diff), stat = "identity") +
     coord_flip() +
     labs(x = "Factor", y = "Deviation from average profile") +
     theme_minimal()
   )
+
+grappe_cluster <- cluster_tree |> 
+  rownames_to_column(var = "grappe") |> 
+  select(grappe, cluster) |> 
+  merge(grappe_sf, by = "grappe") |> 
+  st_as_sf()
+
+tm_shape(adm03) +
+  tm_polygons(alpha = 0) +
+  tm_shape(grappe_cluster) +
+  tm_symbols(col = "cluster", 
+             alpha = .6,
+             palette = rev(RColorBrewer::brewer.pal(5, "Set1")))
+  
 
 ```
 
@@ -546,6 +633,8 @@ tm_shape(cluster_sttl_sf) +
 Global Moran's I and Geary's C statistics on each vulnerability profile
 
 Spatial distribution / spatial overlay of each vulnerability profile with different hazards' delineations
+
+## Spatial interpolation
 
 # Sensitivity and uncertainty analysis
 
