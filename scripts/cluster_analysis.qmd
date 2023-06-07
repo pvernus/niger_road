@@ -6,82 +6,16 @@ editor: visual
 
 # Select the set of variables
 
-```{r}
+```{r load}
 # save(hh_food_prod, cluster_data, food_employment, s16a_me_agric, conso_agg, survey_welfare, s04_me_employment, survey_ind, cluster_data, wt_cluster_data, mean_cluster_list, file = 'data/cluster_analysis.RData')
 load(here('data','short_survey.RData'))
 load(here('data','conso_survey.RData'))
 load(here('data','full_survey.RData'))
-```
 
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
-| Dimension    | Type           | Indicator                                                                             | Variable name             | Data source |
-+==============+================+=======================================================================================+===========================+=============+
-| Potential    | Geo-physical   | X Agroecological zones (binomial)                                                     | zae                       | EHCVM 2018  |
-|              |                |                                                                                       |                           |             |
-|              |                | Cropland extent                                                                       |                           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | Altitude                                                                              |                           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Milieu (urban/rural)                                                                |                           |             |
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
-| Availability | Geo-physical   | Crop food production                                                                  |                           | SPAM        |
-|              |                |                                                                                       |                           |             |
-|              |                |                                                                                       |                           | EHCVM 2018  |
-|              |                |                                                                                       |                           |             |
-|              |                |                                                                                       |                           | EHCVM 2018  |
-|              |                |                                                                                       |                           |             |
-|              |                |                                                                                       |                           | EHCVM 2018  |
-|              |                |                                                                                       |                           |             |
-|              |                |                                                                                       |                           | EHCVM 2018  |
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
-|              | Infrastructure |                                                                                       |                           |             |
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
-|              | Socio-economic | Crop food production (total and main crops)                                           | crop_production_total     | SPAM        |
-|              |                |                                                                                       |                           |             |
-|              |                | Crop food production diversity                                                        | crop_food_production\_\*  | EHCVM 2018  |
-|              |                |                                                                                       |                           |             |
-|              |                | Cultivated area by HH                                                                 | crop_production_diversity |             |
-|              |                |                                                                                       |                           |             |
-|              |                | Diversity of cultivated crops by HH (Simpson index)                                   | cultivated_area           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | Food agriculture employment (%)                                                       | empl_food_agriculture     |             |
-|              |                |                                                                                       |                           |             |
-|              |                | Food processing employment (%)                                                        | empl_food_processing      |             |
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
-| Access       | Infrastructure | X Distance to market                                                                  |                           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Distance to the road (RN1, others)                                                  |                           |             |
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
-|              | Socio-economic | Food-away-from-home employment (%)                                                    | empl_food_away_home       | EHCVM 2018  |
-|              |                |                                                                                       |                           |             |
-|              |                | Food consumption per capita                                                           | fcons_pc                  |             |
-|              |                |                                                                                       |                           |             |
-|              |                | Share of food in total consumption                                                    | fcons_sh                  |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Share of auto-consumption in total cons.                                            | hh_gender                 |             |
-|              |                |                                                                                       |                           |             |
-|              |                | Share of women Hh                                                                     | hh_unemploy               |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Conflict intensity index                                                            |                           |             |
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
-| Utilization  | Infrastructure | X Distance to / \# of schools (WB)                                                    |                           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Distance to / \# of pharmacy (WB)                                                   |                           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Distance principale srce d'approv eau de boisson saison seche s11q28; pluies s11q30 |                           |             |
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
-|              | Socio-economic | X Food Consumption Score (FCS)                                                        | hh_gender                 |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Household Dietary Diversity Scale (HDDS)                                            | hh_literacy               |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Infant anthropometry (DHS, LSMS)                                                    |                           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | HH characteristics (Hh age, Hh gender, income, etc.)                                  |                           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Difficultes depenses maladie s20q13\_\_9;                                           |                           |             |
-|              |                |                                                                                       |                           |             |
-|              |                | X Difficultes depenses frais de scolarite enfants s20q11                              |                           |             |
-+--------------+----------------+---------------------------------------------------------------------------------------+---------------------------+-------------+
+load(here('data','grappes.RData'))
+load(here('data','ner_adm.RData'))
+
+```
 
 ```{r agriculture}
 
@@ -276,14 +210,13 @@ hh_characteristics <- survey_welfare %>%
   rename(
     h_literacy = halfab,
     h_gender = hgender,
-    h_handicap = hhandig,
     h_unemploy = hactiv12m 
   ) %>% 
   mutate(across(starts_with("h_"), as.factor),
-         h_gender = if_else(h_gender==2, 0, 1),
+         h_gender = if_else(h_gender==2, 1, 0),
          h_unemploy = if_else(h_unemploy==1 | h_unemploy==2, 1, 0)
          ) %>% # male=0, female=1
-  select(hhid, h_literacy, h_gender, h_handicap, h_unemploy)
+  select(hhid, h_literacy, h_gender, h_unemploy)
 ```
 
 ```{r merged_data}
@@ -402,26 +335,25 @@ var_label(wt_cluster_data) <- list(
 ```{r cluster_data}
 
 cluster_survey_data <- merged_data |> 
-  mutate(across(c(h_literacy, h_handicap), \(x) as.numeric(levels(x)[x]))) |> 
+  mutate(across(c(h_literacy), \(x) as.numeric(levels(x)[x]))) |> 
   group_by(grappe) |> 
   summarize(
     sh_food_cons = mean(sh_fcons, na.rm = TRUE), # food consumption
     food_cons_pc = mean(fcons_pc, na.rm = TRUE),
-    crop_diversity = mean(crop_diversity, na.rm = TRUE), # auto-production
-    cultivated_area = mean(hh_total_superf, na.rm = TRUE),
+    hh_crop_diversity = mean(crop_diversity, na.rm = TRUE), # auto-production
+    hh_cultivated_area = mean(hh_total_superf, na.rm = TRUE),
     empl_food_agriculture = sum(fte_agriculture)/sum(fte_total), # food empl
     empl_food_processing = sum(fte_processing)/sum(fte_total),
     empl_food_marketing = sum(fte_marketing)/sum(fte_total),
     empl_food_away_home = sum(fte_away_home)/sum(fte_total),
-    hh_literacy = sum(h_literacy) / length(h_literacy), # head of HH charastest.
-    hh_handicap = sum(h_handicap) / length(h_handicap),
-    hh_gender = sum(h_gender) / length(h_gender),
-    hh_unemploy = sum(h_unemploy) / length(h_unemploy)
+    hH_literacy = sum(h_literacy) / length(h_literacy), # head of HH charastest.
+    hH_female = sum(h_gender) / length(h_gender),
+    hH_unemploy = sum(h_unemploy) / length(h_unemploy)
   )
 
 cluster_data <- cluster_survey_data |> 
   left_join(crop_production, by = "grappe") |> 
-  left_join(cropland |> select(grappe, cropland, cropland_change_1519), by = "grappe") |> 
+  left_join(cropland |> select(grappe, cropland, cropland_loss_0319), by = "grappe") |> 
   mutate_all(\(x) if_else(is.na(x), 0, x))
   
 ```
@@ -432,17 +364,18 @@ var_label(cluster_data) <- list(
   grappe = "Grappe/Communauté",
   sh_food_cons = "Average share of food consumption in households' total expenditures",
   food_cons_pc = "Average percentile rank at the country-level of households' food consumption per capita",
-  crop_diversity = "Food crops diversity cultivated by households (Simpson Index)",
-  cultivated_area = "Average percentile rank at the country-level of households' cultivated area",
+  hh_crop_diversity = "Food crops diversity cultivated by households (Simpson Index)",
+  hh_cultivated_area = "Average percentile rank at the country-level of households' cultivated area",
   empl_food_agriculture = "Avarage share of food agriculture jobs in food employment at the ADM-2 level",
   empl_food_processing = "Avarage share of food processing jobs in food employment at the ADM-2 level",
   empl_food_marketing = "Avarage share of food marketing jobs in food employment at the ADM-2 level",
   empl_food_away_home = "Avarage share of food away-from-home jobs in food employment at the ADM-2 level",
-  hh_gender = "Average share of male-led households",
-  hh_literacy = "Average share of household heads who knows how to read",
-  hh_handicap = "Average share of household heads with an handicap",
-  hh_unemploy = "Average share of household heads who are unemployed"
+  hH_female = "Average share of femmale-led households",
+  hH_literacy = "Average share of household heads who knows how to read",
+  hH_unemploy = "Average share of household heads who are unemployed"
 )
+
+save(cluster_data, file = here('data','cluster_data.RData'))
 ```
 
 # Vulnerability profiles
@@ -457,7 +390,7 @@ cluster_df <- column_to_rownames(cluster_data, var = "grappe")
 cluster_norm <- scale(cluster_df) |> 
   as.data.frame()
 
-GGally::ggpairs(cluster_df)
+# GGally::ggpairs(cluster_df)
 ppsr::visualize_pps(cluster_df)
 
 corr_matrix <- cor(scale(cluster_df))
@@ -475,19 +408,73 @@ PerformanceAnalytics::chart.Correlation(cluster_norm, method = "pearson")
 
 # heatmap
 heatmap(corr_matrix, scale = "none")
+heatmap(score_matrix, scale = "none")
 
 col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(256)
 heatmap(corr_matrix, scale = "none", col =  rev(col))
 
-pheatmap(corr_matrix, cutree_rows = 4)
+ppsr::visualize_pps(df = cluster_df)
 
 # gplots::heatmap.2(corr_matrix, scale = "none", col = bluered(100),t race = "none", density.info = "none")
+```
 
+```{r png_matrix}
+
+png(file=here('outputs', 'heatmap_corr.png'),
+width=1000, height=800)
+heatmap(corr_matrix, scale = "none")
+dev.off()
+
+png(file=here('outputs', 'heatmap_pps.png'),
+width=1000, height=800)
+heatmap(score_matrix, scale = "none")
+dev.off()
+```
+
+```{r indicators_balancing}
+
+cluster_b <- column_to_rownames(cluster_data, var = "grappe") %>% 
+  select(-c(crop_production_cowp, crop_production_sorg, crop_production_total, hh_cultivated_area))
+cluster_norm_b <- scale(cluster_bal) |> 
+  as.data.frame()
+
+corr_matrix_b <- cor(scale(cluster_bal))
+score_matrix_b <- score_matrix(cluster_norm_bal)
 ```
 
 ## PCA
 
-```{r pca}
+```{r pca_norm}
+
+data_pca <- princomp(cluster_norm_b)
+summary(data_pca)
+data_scores <- data_pca$scores[, 1:5]
+
+# loadings of each principal component
+data_pca$loadings[, 1:5]
+
+# Eigen value / scree plot
+get_eig(data_pca)
+fviz_eig(data_pca)
+
+res.pca <- PCA(cluster_norm, graph = FALSE)
+summary(res.pca)
+res.scores <- res.pca$ind$coord[, 1:5]
+# Kaizer criterion: keep eigenvalue PC > 1
+res.pca$eig[,1]^2
+
+# biplot of the attributes
+fviz_pca_var(data_pca, col.var = "black")
+# contribution of each variable (cos2 = quality of representation)
+fviz_cos2(data_pca, choice = "var", axes = 1:2)
+# biplot combined with cos2
+fviz_pca_var(data_pca, col.var = "cos2",
+             gradient.cols = c("grey", "orange", "red"),
+             repel = TRUE)
+
+```
+
+```{r pca_score}
 
 data_pca <- princomp(cluster_norm)
 summary(data_pca)
@@ -514,6 +501,41 @@ fviz_cos2(data_pca, choice = "var", axes = 1:2)
 fviz_pca_var(data_pca, col.var = "cos2",
              gradient.cols = c("grey", "orange", "red"),
              repel = TRUE)
+```
+
+```{r eigen_value}
+
+eig <- get_eig(data_pca) %>% rownames_to_column() %>% select(pc = rowname, cumulative.variance.percent) %>% 
+  pivot_longer(cols = cumulative.variance.percent, 
+               names_to = "name", values_to = "value") %>% 
+  filter(!pc %in% c('Dim.11', 'Dim.12', 'Dim.13', 'Dim.14', 'Dim.15')) %>% 
+  mutate(pc = as_factor(pc))
+
+ggplot(data=eig, aes(x=pc, y=value, fill = pc)) +
+geom_bar(stat="identity", color="black", position=position_dodge()) +
+  scale_fill_manual(values=c("lightblue", "lightblue", "lightblue",  "lightblue", "red",
+                             "lightblue",  "lightblue", "lightblue",  "lightblue","lightblue")) +
+  geom_hline(yintercept=66, linetype="dashed", color = "red") +
+  labs(x = "Principal components", y = "Cumulative variance explained (%)") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        panel.grid.major.x = element_blank())
+```
+
+```{r png_eig}
+
+png(file=here('outputs', 'eig_bar.png'),
+width=700, height=500)
+ggplot(data=eig, aes(x=pc, y=value, fill = pc)) +
+geom_bar(stat="identity", color="black", position=position_dodge()) +
+  scale_fill_manual(values=c("lightblue", "lightblue", "lightblue",  "lightblue", "red",
+                             "lightblue",  "lightblue", "lightblue",  "lightblue","lightblue")) +
+  geom_hline(yintercept=66, linetype="dashed", color = "red") +
+  labs(x = "Principal components", y = "Cumulative variance explained (%)") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        panel.grid.major.x = element_blank())
+dev.off()
 
 ```
 
@@ -541,19 +563,10 @@ tree_coph <- cophenetic(data_tree)
 cor(data_dist, tree_coph)
 # test different distance methods
 
-# cut and visualize tree into clusters
+# kmeans
+# fviz_nbclust(data_scores, kmeans, method = "silhouette")
+# fviz_nbclust(data_scores, kmeans, method = "wss")
 
-
-# graph visualization
-require("igraph")
-fviz_dend(data_tree, k = 3, # cut in four groups
-     cex = .5, # label size
-     horiz = TRUE,
-     k_colors = "jco", # other option: c("#2E9FDF", "#00AFBB", "E7B800", "#FC4E07")
-     rect = TRUE,
-     rect_border = "jco",
-     rect_fill = TRUE
-)
 # heatmap
 pheatmap::pheatmap(data_dist, cutree_rows = 3)
 
@@ -562,6 +575,55 @@ cluster <- cutree(data_tree, k = 3)
 cluster_tree <- data.frame(cluster, cluster_norm)
 
 # rownames(cluster_norm)[cluster == 1]
+
+```
+
+```{r png_hclust}
+
+# Clusters = 3
+png(file=here('outputs', 'hclust_3.png'),
+width=700, height=500)
+# graph visualization
+require("igraph")
+fviz_dend(data_tree, k = 3, # cut in four groups (3, 6, 7)
+     cex = .5, # label size
+     horiz = TRUE,
+     k_colors = "jco", # other option: c("#2E9FDF", "#00AFBB", "E7B800", "#FC4E07")
+     rect = TRUE,
+     rect_border = "jco",
+     rect_fill = TRUE
+)
+dev.off()
+
+# Clusters = 6
+png(file=here('outputs', 'hclust_6.png'),
+width=700, height=500)
+# graph visualization
+require("igraph")
+fviz_dend(data_tree, k = 6, 
+     cex = .5, # label size
+     horiz = TRUE,
+     k_colors = "jco", # other option: c("#2E9FDF", "#00AFBB", "E7B800", "#FC4E07")
+     rect = TRUE,
+     rect_border = "jco",
+     rect_fill = TRUE
+)
+dev.off()
+
+# No color
+png(file=here('outputs', 'hclust.png'),
+width=700, height=500)
+# graph visualization
+require("igraph")
+fviz_dend(data_tree, 
+          horiz = TRUE,
+          cex = .5 # label size
+)
+dev.off()
+
+```
+
+```{r spatial_dist}
 
 # estimate mean of all variables
 mean_total <- bind_rows(map(cluster_norm, mean)) %>% 
@@ -602,8 +664,6 @@ tm_shape(adm03) +
   tm_symbols(col = "cluster", 
              alpha = .6,
              palette = rev(RColorBrewer::brewer.pal(5, "Set1")))
-  
-
 ```
 
 Density is used as an illustrative variable \[include it in the mapping?\]

@@ -1,3 +1,5 @@
+load(here('data','full_survey.RData'))
+
 grappe_gps_survey <- grappe_gps_ner2018 |> 
   left_join(survey_welfare |> select(grappe, id_adm2, hhweight), by = "grappe") |> 
   distinct(grappe, .keep_all = TRUE)
@@ -36,8 +38,8 @@ cropland_wcover <- raster("data_raw/WorldCover_cropland_30s.tif")
 geodata::cropland(source = "GLAD", path = here("data_raw"), year = 2019)
 cropland_glad_2019 <- raster("data_raw/glad_cropland_2019.tif")
 
-geodata::cropland(source = "GLAD", path = here("data_raw"), year = 2015)
-cropland_glad_2015 <- raster("data_raw/glad_cropland_2015.tif")
+geodata::cropland(source = "GLAD", path = here("data_raw"), year = 2003)
+cropland_glad_2003 <- raster("data_raw/glad_cropland_2003.tif")
 
 plot(cropland_wcover)
 plot(cropland_glad_2019)
@@ -59,19 +61,19 @@ cropland_wcover_grappe <- coverage_weighted_by_buffer(cropland_wcover) |>
   rename(cropland_wcover = "wght_mean")
 cropland_glad19_grappe <- coverage_weighted_by_buffer(cropland_glad_2019) |> 
   rename(cropland_glad19 = "wght_mean")
-cropland_glad15_grappe <- coverage_weighted_by_buffer(cropland_glad_2015) |> 
-  rename(cropland_glad15 = "wght_mean")
+cropland_glad03_grappe <- coverage_weighted_by_buffer(cropland_glad_2003) |> 
+  rename(cropland_glad03 = "wght_mean")
 
 cropland <- grappe_sf |> 
   rowid_to_column(var = "id") |> 
   left_join(cropland_wcover_grappe, by = "id") |> 
   left_join(cropland_glad19_grappe, by = "id") |> 
-  left_join(cropland_glad15_grappe, by = "id") |> 
+  left_join(cropland_glad03_grappe, by = "id") |> 
   rowwise() |> 
   mutate(pmin = pmin(cropland_wcover, cropland_glad19),
          pmax = pmax(cropland_wcover, cropland_glad19),
          cropland = runif(1, pmin, pmax),
-         cropland_change_1519 = cropland_glad19 - cropland_glad15
+         cropland_loss_0319 = cropland_glad19 - cropland_glad03
          ) |> 
   st_drop_geometry()
 
@@ -123,8 +125,8 @@ crop_production <- crop_production_by_grappe |>
 
 # save data
 save(grappe_sf, grappe_buffer, 
-     cropland_qed_2015, cropland_wcover, cropland_glad_2019, cropland_glad_2015,
-     cropland_qed15_grappe, cropland_wcover_grappe, cropland_glad19_grappe, cropland_glad15_grappe,
+     cropland_qed_2015, cropland_wcover, cropland_glad_2019, cropland_glad_2003,
+     cropland_qed15_grappe, cropland_wcover_grappe, cropland_glad19_grappe, cropland_glad03_grappe,
      cropland, 
      spam_2017_ner, crop_production_by_cell, crop_production_sf, crop_production_by_grappe, crop_production, 
      file = "data/grappes.RData")

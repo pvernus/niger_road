@@ -82,7 +82,8 @@ pacman::p_load(
   FactoMineR,
   factoextra,
   GGally,
-  ggforce
+  ggforce,
+  PerformanceAnalytics
 )
 
 
