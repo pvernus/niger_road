@@ -61,14 +61,14 @@ cultivated_area <- hh_food_prod %>%
 
 ## Diversity of cultivated crops per HH ##
 
-crop_diversity <- hh_food_prod %>% 
-  select(hhid, princ_culture, superficie_ha) %>% 
-  pivot_wider(names_from = princ_culture, values_from = superficie_ha, 
-              values_fn = sum, names_prefix = "i_", values_fill = 0) %>% 
-  group_by(hhid) %>% 
-  summarize(crop_diversity = simpson(starts_with('i_'))) %>% # simpson index (one crop = 1, more crops --> 0) 
-  ungroup() %>% 
-  select(hhid, crop_diversity)
+# crop_diversity <- hh_food_prod %>% 
+#  select(hhid, princ_culture, superficie_ha) %>% 
+#  pivot_wider(names_from = princ_culture, values_from = superficie_ha, 
+#              values_fn = sum, names_prefix = "i_", values_fill = 0) %>% 
+#  group_by(hhid) %>% 
+#  summarize(crop_diversity = simpson(starts_with('i_'))) %>% # simpson index (one crop = 1, more crops --> 0) 
+#  ungroup() %>% 
+#  select(hhid, crop_diversity)
 
 ```
 
@@ -225,9 +225,7 @@ hh_characteristics <- survey_welfare %>%
 merged_data <- survey_welfare %>% 
   select(hhid, grappe, region, zae, hhweight, id_adm1, id_adm2) %>% 
   left_join(cultivated_area, by = "hhid") %>% 
-  left_join(crop_diversity, by = "hhid") %>% 
-  mutate(crop_diversity = if_else(is.na(crop_diversity), 0, crop_diversity),
-         hh_total_superf = if_else(is.na(hh_total_superf), 0, hh_total_superf)) |> 
+  mutate(hh_total_superf = if_else(is.na(hh_total_superf), 0, hh_total_superf)) |> 
   left_join(food_fte, by = "hhid") %>% 
   left_join(food_consumption, by = "hhid") %>% 
   left_join(hh_characteristics, by = "hhid")
@@ -340,7 +338,6 @@ cluster_survey_data <- merged_data |>
   summarize(
     sh_food_cons = mean(sh_fcons, na.rm = TRUE), # food consumption
     food_cons_pc = mean(fcons_pc, na.rm = TRUE),
-    hh_crop_diversity = mean(crop_diversity, na.rm = TRUE), # auto-production
     hh_cultivated_area = mean(hh_total_superf, na.rm = TRUE),
     empl_food_agriculture = sum(fte_agriculture)/sum(fte_total), # food empl
     empl_food_processing = sum(fte_processing)/sum(fte_total),
@@ -354,7 +351,8 @@ cluster_survey_data <- merged_data |>
 cluster_data <- cluster_survey_data |> 
   left_join(crop_production, by = "grappe") |> 
   left_join(cropland |> select(grappe, cropland, cropland_loss_0319), by = "grappe") |> 
-  mutate_all(\(x) if_else(is.na(x), 0, x))
+  mutate_all(\(x) if_else(is.na(x), 0, x)) |> 
+  select(-crop_production_diversity)
   
 ```
 
@@ -391,29 +389,29 @@ cluster_norm <- scale(cluster_df) |>
   as.data.frame()
 
 # GGally::ggpairs(cluster_df)
-ppsr::visualize_pps(cluster_df)
+# ppsr::visualize_pps(cluster_df)
 
 corr_matrix <- cor(scale(cluster_df))
 score_matrix <- score_matrix(cluster_df)
-cov_matrix <- cov(cluster_df)
+# cov_matrix <- cov(cluster_df)
 
-ggcorrplot(corr_matrix)
+# ggcorrplot(corr_matrix)
 
-tmwr_cols <- colorRampPalette(c("#91CBD765", "#CA225E"))
-corr_matrix %>% 
-  corrplot(col = tmwr_cols(200), tl.col = "black", method = "ellipse")
+# tmwr_cols <- colorRampPalette(c("#91CBD765", "#CA225E"))
+# corr_matrix %>% 
+#  corrplot(col = tmwr_cols(200), tl.col = "black", method = "ellipse")
 
-PerformanceAnalytics::chart.Correlation(cluster_df, method = "pearson")
-PerformanceAnalytics::chart.Correlation(cluster_norm, method = "pearson")
+# PerformanceAnalytics::chart.Correlation(cluster_df, method = "pearson")
+# PerformanceAnalytics::chart.Correlation(cluster_norm, method = "pearson")
 
 # heatmap
-heatmap(corr_matrix, scale = "none")
+# heatmap(corr_matrix, scale = "none")
 heatmap(score_matrix, scale = "none")
 
 col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(256)
 heatmap(corr_matrix, scale = "none", col =  rev(col))
 
-ppsr::visualize_pps(df = cluster_df)
+# ppsr::visualize_pps(df = cluster_df)
 
 # gplots::heatmap.2(corr_matrix, scale = "none", col = bluered(100),t race = "none", density.info = "none")
 ```
@@ -422,7 +420,8 @@ ppsr::visualize_pps(df = cluster_df)
 
 png(file=here('outputs', 'heatmap_corr.png'),
 width=1000, height=800)
-heatmap(corr_matrix, scale = "none")
+col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(256)
+heatmap(corr_matrix, scale = "none", col =  rev(col))
 dev.off()
 
 png(file=here('outputs', 'heatmap_pps.png'),
@@ -434,12 +433,11 @@ dev.off()
 ```{r indicators_balancing}
 
 cluster_b <- column_to_rownames(cluster_data, var = "grappe") %>% 
-  select(-c(crop_production_cowp, crop_production_sorg, crop_production_total, hh_cultivated_area))
-cluster_norm_b <- scale(cluster_bal) |> 
-  as.data.frame()
+  select(-c(crop_production_cowp, crop_production_sorg, crop_production_total))
+cluster_norm_b <- as.data.frame(scale(cluster_b))
 
-corr_matrix_b <- cor(scale(cluster_bal))
-score_matrix_b <- score_matrix(cluster_norm_bal)
+corr_matrix_b <- cor(scale(cluster_b))
+score_matrix_b <- score_matrix(cluster_norm_b)
 ```
 
 ## PCA
@@ -451,7 +449,7 @@ summary(data_pca)
 data_scores <- data_pca$scores[, 1:5]
 
 # loadings of each principal component
-data_pca$loadings[, 1:5]
+# data_pca$loadings[, 1:5]
 
 # Eigen value / scree plot
 get_eig(data_pca)
@@ -461,10 +459,10 @@ res.pca <- PCA(cluster_norm, graph = FALSE)
 summary(res.pca)
 res.scores <- res.pca$ind$coord[, 1:5]
 # Kaizer criterion: keep eigenvalue PC > 1
-res.pca$eig[,1]^2
+# res.pca$eig[,1]^2
 
 # biplot of the attributes
-fviz_pca_var(data_pca, col.var = "black")
+# fviz_pca_var(data_pca, col.var = "black")
 # contribution of each variable (cos2 = quality of representation)
 fviz_cos2(data_pca, choice = "var", axes = 1:2)
 # biplot combined with cos2
@@ -503,34 +501,21 @@ fviz_pca_var(data_pca, col.var = "cos2",
              repel = TRUE)
 ```
 
-```{r eigen_value}
+```{r png_eig}
 
 eig <- get_eig(data_pca) %>% rownames_to_column() %>% select(pc = rowname, cumulative.variance.percent) %>% 
+  mutate(pc = as_factor(pc)) |> 
+  slice_min(pc, n = 10) |> 
   pivot_longer(cols = cumulative.variance.percent, 
-               names_to = "name", values_to = "value") %>% 
-  filter(!pc %in% c('Dim.11', 'Dim.12', 'Dim.13', 'Dim.14', 'Dim.15')) %>% 
-  mutate(pc = as_factor(pc))
-
-ggplot(data=eig, aes(x=pc, y=value, fill = pc)) +
-geom_bar(stat="identity", color="black", position=position_dodge()) +
-  scale_fill_manual(values=c("lightblue", "lightblue", "lightblue",  "lightblue", "red",
-                             "lightblue",  "lightblue", "lightblue",  "lightblue","lightblue")) +
-  geom_hline(yintercept=66, linetype="dashed", color = "red") +
-  labs(x = "Principal components", y = "Cumulative variance explained (%)") +
-  theme_minimal() +
-  theme(legend.position = "none",
-        panel.grid.major.x = element_blank())
-```
-
-```{r png_eig}
+               names_to = "name", values_to = "value")
 
 png(file=here('outputs', 'eig_bar.png'),
 width=700, height=500)
 ggplot(data=eig, aes(x=pc, y=value, fill = pc)) +
 geom_bar(stat="identity", color="black", position=position_dodge()) +
-  scale_fill_manual(values=c("lightblue", "lightblue", "lightblue",  "lightblue", "red",
-                             "lightblue",  "lightblue", "lightblue",  "lightblue","lightblue")) +
-  geom_hline(yintercept=66, linetype="dashed", color = "red") +
+  scale_fill_manual(values=c("white", "white", "white",  "white", "#005DB9",
+                             "white",  "white", "white",  "white","white")) +
+  geom_hline(yintercept=66, linetype="dashed", color = "#005DB9") +
   labs(x = "Principal components", y = "Cumulative variance explained (%)") +
   theme_minimal() +
   theme(legend.position = "none",
@@ -568,7 +553,7 @@ cor(data_dist, tree_coph)
 # fviz_nbclust(data_scores, kmeans, method = "wss")
 
 # heatmap
-pheatmap::pheatmap(data_dist, cutree_rows = 3)
+# pheatmap::pheatmap(data_dist, cutree_rows = 3)
 
 # Cut dataframe by cluster
 cluster <- cutree(data_tree, k = 3)
@@ -580,12 +565,26 @@ cluster_tree <- data.frame(cluster, cluster_norm)
 
 ```{r png_hclust}
 
+palette <- c("#FF9933", "#990000", "#00CC66")
+
 # Clusters = 3
 png(file=here('outputs', 'hclust_3.png'),
 width=700, height=500)
 # graph visualization
 require("igraph")
 fviz_dend(data_tree, k = 3, # cut in four groups (3, 6, 7)
+     cex = .5, # label size
+     rect = TRUE,
+     k_colors = palette
+)
+dev.off()
+
+# Clusters = 4
+png(file=here('outputs', 'hclust_4.png'),
+width=700, height=500)
+# graph visualization
+require("igraph")
+fviz_dend(data_tree, k = 4, 
      cex = .5, # label size
      horiz = TRUE,
      k_colors = "jco", # other option: c("#2E9FDF", "#00AFBB", "E7B800", "#FC4E07")
@@ -595,12 +594,12 @@ fviz_dend(data_tree, k = 3, # cut in four groups (3, 6, 7)
 )
 dev.off()
 
-# Clusters = 6
-png(file=here('outputs', 'hclust_6.png'),
+# Clusters = 5
+png(file=here('outputs', 'hclust_5.png'),
 width=700, height=500)
 # graph visualization
 require("igraph")
-fviz_dend(data_tree, k = 6, 
+fviz_dend(data_tree, k = 5, 
      cex = .5, # label size
      horiz = TRUE,
      k_colors = "jco", # other option: c("#2E9FDF", "#00AFBB", "E7B800", "#FC4E07")
@@ -623,18 +622,26 @@ dev.off()
 
 ```
 
-```{r spatial_dist}
+```{r contributation_indicators}
 
 # estimate mean of all variables
-mean_total <- bind_rows(map(cluster_norm, mean)) %>% 
-  pivot_longer(everything())
+mean_total <- bind_rows(map(cluster_norm_b, mean)) |> 
+  pivot_longer(everything()) |> 
+  mutate(
+    dimension = fct_relevel(as_factor(case_when(
+      name %in% c('cropland', 'cropland_loss_0319') ~ 'Potential',
+      name %in% c('hh_cultivated_area', 'empl_food_agriculture', 'empl_food_processing', 'crop_production_diversity', 'crop_production_pmil', 'crop_production_vege', 'cropland', 'cropland_loss_0319') ~ 'Availability',
+      name %in% c('sh_food_cons', 'food_cons_pc', 'empl_food_marketing', 'empl_food_away_home', 'hH_unemploy') ~ 'Access',
+      name %in% c('hH_literacy', 'hH_female') ~ 'Utilization'
+  )), "Potential", "Availability", "Access", "Utilization")
+  )
 
 # estimate mean for each cluster
 mean_cluster <- cluster_tree |> 
   group_by(cluster) |> 
   summarize(across(where(is.numeric), ~ mean(.x, na.rm = TRUE))) %>% 
   mutate(cluster = as.factor(cluster))
-  
+
 mean_cluster_list <- split(mean_cluster, 1:nrow(mean_cluster))
 mean_cluster_list <- lapply(mean_cluster_list, function(df) pivot_longer(df, !cluster))
        
@@ -646,24 +653,122 @@ mean_cluster_list <- lapply(mean_cluster_list, function(df) mutate(df, diff = va
 # deviation from average for all variables for each cluster
 lapply(mean_cluster_list, function(df)
   ggplot(df) +
-    geom_bar(aes(reorder(name, diff), diff), stat = "identity") +
+    geom_bar(aes(x = reorder(name, diff), y = diff, fill = dimension), 
+             stat = "identity") +
     coord_flip() +
+    scale_fill_brewer(palette = 'Spectral') +
     labs(x = "Factor", y = "Deviation from average profile") +
     theme_minimal()
   )
 
+```
+
+```{r contrib_summary}
+
+# estimate mean of all variables
+mean_total <- bind_rows(map(cluster_b |> column_to_rownames(var = ), summary)) |> 
+  pivot_longer(everything())
+
+
+mean_total <- cluster_b |> 
+  map(~summary(.x)) %>%  # compute summary of each var
+  do.call(rbind, .) |>  # bind list elements into df
+  data.frame() |> 
+  rename(`1st Qu.` = 'X1st.Qu.', `3rd Qu.` = 'X3rd.Qu.')
+
+# estimate mean for each cluster
+mean_cluster <- cluster_tree |> 
+  group_by(cluster) |> 
+  summarize(across(where(is.numeric), ~ mean(.x, na.rm = TRUE))) %>% 
+  mutate(cluster = as.factor(cluster))
+
+mean_cluster <- cluster_tree |> 
+  pivot_longer(cols = -cluster, names_to = 'var', values_to = 'value') |> 
+  group_by(cluster, var) |> 
+  summarize(
+    `Min.` = summary(value)[1],
+    `1st Qu.` = summary(value)[2],
+    `Median` = summary(value)[3],
+    `Mean` = summary(value)[4],
+    `3rd Qu.` = summary(value)[5],
+    `Max.` = summary(value)[6]
+  )
+    
+mean_cluster |> 
+  group_by(cluster) |> 
+  group_map(~ setdiff(.x[,-1], mean_total))
+```
+
+```{r spatial_distribution}
+
 grappe_cluster <- cluster_tree |> 
   rownames_to_column(var = "grappe") |> 
   select(grappe, cluster) |> 
+  mutate(`Food security profile` = case_when(
+    cluster == 1 ~ 'Subsistence farming (Low Potential/Availability)',
+    cluster == 2 ~ 'Urban areas (High Access, Low Availability)',
+    cluster == 3 ~ 'Food basket (High Potential/Availability, Low Access)'
+  )) |> 
   merge(grappe_sf, by = "grappe") |> 
   st_as_sf()
+
+st_join(adm02, grappe_cluster, left = TRUE)
+
+palette <- c("#FF9933", "#990000", "#00CC66")
 
 tm_shape(adm03) +
   tm_polygons(alpha = 0) +
   tm_shape(grappe_cluster) +
-  tm_symbols(col = "cluster", 
+  tm_symbols(col = "Food security profile", 
              alpha = .6,
-             palette = rev(RColorBrewer::brewer.pal(5, "Set1")))
+             palette = palette) +
+  tm_layout(legend.width = 6,
+            legend.height = 4)
+
+## Aggregate ADM2
+# survey design cluster_tree
+# Estimation proportions for each cluster in each ADM2
+
+##  Smoothing
+# merge pop grid + adm3
+
+
+# buffer cluster
+
+
+# merge adm3 + cluster
+
+
+base <- grappe_cluster |> select(cluster, hhweight) |> 
+  mutate(x = sf::st_coordinates(geometry)[,1],
+         y = sf::st_coordinates(geometry)[,2])
+
+base_distinct <- distinct(base)
+
+base_cluster <- aggregate(hhweight ~ x+y, base, sum)
+
+base.ppp = ppp(base$x, base$y,
+                         c(min(base$x), max(base$x)),
+                         c(min(base$y), max(base$y))
+                         )
+densite <- density.ppp(base.ppp, sigma = 200, weights = base_distinct$hhweight)
+
+plot(densite)
+```
+
+```{r cluster_map}
+
+png(file=here('outputs', 'map_cluster_3.png'),
+width=700, height=500)
+tm_shape(adm03) +
+  tm_polygons(alpha = 0) +
+  tm_shape(grappe_cluster) +
+  tm_symbols(col = "Food security profile", 
+             alpha = .6,
+             palette = palette) +
+  tm_layout(legend.width = 6,
+            legend.height = 4)
+dev.off()
 ```
 
 Density is used as an illustrative variable \[include it in the mapping?\]
