@@ -235,7 +235,7 @@ merged_data <- survey_welfare %>%
 ```{r weighted_data}
 
 # Survey design
-survey_design <- cluster_data %>% 
+survey_design <- merged_data %>% 
   as_survey_design(ids = c(grappe,hhid), 
                    strata = c(region, zae), 
                    weights = hhweight,
@@ -362,7 +362,6 @@ var_label(cluster_data) <- list(
   grappe = "Grappe/Communauté",
   sh_food_cons = "Average share of food consumption in households' total expenditures",
   food_cons_pc = "Average percentile rank at the country-level of households' food consumption per capita",
-  hh_crop_diversity = "Food crops diversity cultivated by households (Simpson Index)",
   hh_cultivated_area = "Average percentile rank at the country-level of households' cultivated area",
   empl_food_agriculture = "Avarage share of food agriculture jobs in food employment at the ADM-2 level",
   empl_food_processing = "Avarage share of food processing jobs in food employment at the ADM-2 level",
@@ -437,7 +436,7 @@ cluster_b <- column_to_rownames(cluster_data, var = "grappe") %>%
 cluster_norm_b <- as.data.frame(scale(cluster_b))
 
 corr_matrix_b <- cor(scale(cluster_b))
-score_matrix_b <- score_matrix(cluster_norm_b)
+# score_matrix_b <- score_matrix(cluster_norm_b)
 ```
 
 ## PCA
@@ -541,7 +540,7 @@ res.daisy <- daisy(res.scores)
 ```{r hcluster}
 
 data_tree <- hclust(data_dist, method = "ward.D2")
-res.tree <- hclust(res.dist, method = "ward.D2")
+# res.tree <- hclust(res.dist, method = "ward.D2")
 
 # measure how well the cluster tree reflects the data: compute correlation between the cophenetic distances and the distance matrix (i.e. here factor scores); high correlation means high accuracy of the clustering solution.
 tree_coph <- cophenetic(data_tree)
@@ -555,6 +554,8 @@ cor(data_dist, tree_coph)
 # heatmap
 # pheatmap::pheatmap(data_dist, cutree_rows = 3)
 
+# https://statsandr.com/blog/clustering-analysis-k-means-and-hierarchical-clustering-by-hand-and-in-r/#optimal-number-of-clusters
+
 # Cut dataframe by cluster
 cluster <- cutree(data_tree, k = 3)
 cluster_tree <- data.frame(cluster, cluster_norm)
@@ -565,7 +566,7 @@ cluster_tree <- data.frame(cluster, cluster_norm)
 
 ```{r png_hclust}
 
-palette <- c("#FF9933", "#990000", "#00CC66")
+palette_profiles <- c("#FFC000", "#FA4926", "#00CC66")
 
 # Clusters = 3
 png(file=here('outputs', 'hclust_3.png'),
@@ -650,13 +651,15 @@ mean_cluster_list <- lapply(mean_cluster_list, function(df) merge(df, mean_total
 # estimate difference between total and cluster means
 mean_cluster_list <- lapply(mean_cluster_list, function(df) mutate(df, diff = value.cluster - value.total))
 
+palette_dim <- c('#005DB9', '#C4EAFF', '#7030A0', '#EFE5F7')
+
 # deviation from average for all variables for each cluster
 lapply(mean_cluster_list, function(df)
   ggplot(df) +
     geom_bar(aes(x = reorder(name, diff), y = diff, fill = dimension), 
              stat = "identity") +
     coord_flip() +
-    scale_fill_brewer(palette = 'Spectral') +
+    scale_fill_manual(values = c('#005DB9', '#C4EAFF', '#7030A0', '#EFE5F7')) +
     labs(x = "Factor", y = "Deviation from average profile") +
     theme_minimal()
   )
@@ -705,36 +708,79 @@ grappe_cluster <- cluster_tree |>
   rownames_to_column(var = "grappe") |> 
   select(grappe, cluster) |> 
   mutate(`Food security profile` = case_when(
-    cluster == 1 ~ 'Subsistence farming (Low Potential/Availability)',
+    cluster == 1 ~ 'Subsistence farming (Low Production)',
     cluster == 2 ~ 'Urban areas (High Access, Low Availability)',
-    cluster == 3 ~ 'Food basket (High Potential/Availability, Low Access)'
-  )) |> 
+    cluster == 3 ~ 'Food basket (High Production, Low Consumption)'
+  ))
+
+# Merge with grappe_sf
+grappe_cluster_sf <- grappe_cluster |> 
   merge(grappe_sf, by = "grappe") |> 
   st_as_sf()
 
-st_join(adm02, grappe_cluster, left = TRUE)
-
-palette <- c("#FF9933", "#990000", "#00CC66")
-
+# Map cluster points
 tm_shape(adm03) +
   tm_polygons(alpha = 0) +
-  tm_shape(grappe_cluster) +
+  tm_shape(grappe_cluster_sf) +
   tm_symbols(col = "Food security profile", 
              alpha = .6,
-             palette = palette) +
+             palette = palette_profiles) +
   tm_layout(legend.width = 6,
             legend.height = 4)
 
 ## Aggregate ADM2
-# survey design cluster_tree
-# Estimation proportions for each cluster in each ADM2
+# load(here('data','short_survey.RData'))
 
-##  Smoothing
-# merge pop grid + adm3
+suvery_cluster <- grappe_cluster %>%
+  mutate(grappe = as.numeric(grappe)) %>% 
+  left_join(survey_welfare %>% 
+              select(hhid, grappe, region, zae, hhweight, id_adm1, id_adm2), 
+              by = "grappe")
+
+survey_design <- suvery_cluster %>% 
+  as_survey_design(ids = c(grappe,hhid), 
+                   strata = c(region, zae), 
+                   weights = hhweight,
+                   nest = TRUE)
+
+# Estimate proportions of each cluster in ADM2
+cluster_idm2 <- survey_design %>% 
+  group_by(id_adm2, cluster) %>% 
+  summarise(pct = 100*survey_prop(), vartype = "ci") %>% 
+  select(-vartype) %>% 
+  pivot_wider(names_from = cluster, values_from = c(pct, pct_se), values_fill = 0) %>% 
+  select(-c(starts_with("pct_se")))
+  
+# Join with grappe_cluster_sf
+cluster_idm2_sf <- left_join(adm02, cluster_idm2, by = "id_adm2")
+
+## merge ner_grid + pop
+
+# # load("data/ner_grid.RData")
+# load("data/grid3_settlement.RData")
+
+grid3_centroid = st_centroid(grid3)
+
+pop_grid_centroid <- st_join(ner_grid, grid3_centroid)
+
+pop_grid <- pop_grid_centroid %>% 
+  group_by(grid_id) %>% 
+  summarize(pop_un = sum(pop_un_adj, na.rm = TRUE),
+            rev_log_pop_un = 1/log10(pop_un))
 
 
-# buffer cluster
 
+tm_shape(pop_grid) +
+  tm_polygons(col = "log_pop_un", style = "jenks", palette = "viridis") +
+  tm_layout(frame = FALSE, legend.outside = TRUE)
+
+pop_grid_cluster_idm2_sf <- st_join(pop_grid, cluster_idm2_sf)
+
+tm_shape(cluster_idm2_sf) +
+  tm_polygons(col = "pct_1", title = "", style = "quantile", border.col = 'white',
+              style = "quantile") +
+  tm_layout(frame = FALSE, legend.outside = TRUE,
+            legend.text.size = .5)
 
 # merge adm3 + cluster
 
@@ -756,18 +802,62 @@ densite <- density.ppp(base.ppp, sigma = 200, weights = base_distinct$hhweight)
 plot(densite)
 ```
 
+```{r}
+
+# Map gridded-population
+png(file=here('outputs', 'map_log_pop_un.png'),
+width=700, height=500)
+tm_shape(pop_grid) +
+  tm_polygons(col = "log_pop_un", style = "jenks", palette = "viridis") +
+  tm_layout(frame = FALSE, legend.outside = TRUE)
+dev.off()
+
+```
+
 ```{r cluster_map}
 
 png(file=here('outputs', 'map_cluster_3.png'),
 width=700, height=500)
 tm_shape(adm03) +
   tm_polygons(alpha = 0) +
-  tm_shape(grappe_cluster) +
-  tm_symbols(col = "Food security profile", 
+  tm_shape(grappe_cluster_sf) +
+  tm_symbols(size = .5, col = "Food security profile", 
              alpha = .6,
-             palette = palette) +
+             palette = palette_profiles) +
   tm_layout(legend.width = 6,
             legend.height = 4)
+dev.off()
+
+
+    cluster == 1 ~ 'Subsistence farming (Low Production)',
+    cluster == 2 ~ 'Urban areas (High Access, Low Availability)',
+    cluster == 3 ~ 'Food basket (High Production, Low Consumption)'
+
+png(file=here('outputs', 'map_cluster_subs_idm2.png'),
+width=700, height=500)
+tm_shape(cluster_idm2_sf) +
+  tm_polygons(col = "pct_1", title = "", style = "quantile", border.col = 'white',
+              palette = "Reds") +
+  tm_layout(frame = FALSE, legend.outside = TRUE,
+            legend.text.size = .5)
+dev.off()
+
+png(file=here('outputs', 'map_cluster_urb_idm2.png'),
+width=700, height=500)
+tm_shape(cluster_idm2_sf) +
+  tm_polygons(col = "pct_2", title = "", style = "quantile", border.col = 'white',
+              palette = "Greens") +
+  tm_layout(frame = FALSE, legend.outside = TRUE,
+            legend.text.size = .5)
+dev.off()
+
+png(file=here('outputs', 'map_cluster_foodb_idm2.png'),
+width=700, height=500)
+tm_shape(cluster_idm2_sf) +
+  tm_polygons(col = "pct_3", title = "", style = "quantile", border.col = 'white',
+              palette = "Oranges") +
+  tm_layout(frame = FALSE, legend.outside = TRUE,
+            legend.text.size = .5)
 dev.off()
 ```
 

@@ -44,6 +44,8 @@ pacman::p_load(
   sfnetworks,
   dbscan,
   netrankr,
+# Humdata
+  rhdx,
 # spatial
   osmdata, # import data from OpenStreetMap
   terra, # handle raster data

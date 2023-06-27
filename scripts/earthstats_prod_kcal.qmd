@@ -1,0 +1,31 @@
+---
+title: "Mean annual temperature"
+format: html
+editor: visual
+---
+
+**Source**: [World Terrestrial Ecosystems Explorer (usgs.gov)](https://rmgsc.cr.usgs.gov/wtee/wtee.shtml) **Spatial Reference:** WGS 1984
+
+```{r}
+load(here('data', 'grappe_gps.RData'))
+load(here('data','ner_adm.RData'))
+
+food_prod_kcal <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'GlbFoodkcal.tiff')) %>% crop(ner_adm00)
+feed_prod_kcal <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'GlbFeedkcal.tiff')) %>% crop(ner_adm00)
+
+
+food_prod_kcal_by_grappe <- food_prod_kcal %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  group_by(id) %>% 
+  summarize(food_prod_kcal = sum(value * coverage_fraction) / sum(coverage_fraction))
+            
+feed_prod_kcal_by_grappe <- feed_prod_kcal %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  group_by(id) %>% 
+  summarize(feed_prod_kcal = sum(value * coverage_fraction) / sum(coverage_fraction))            
+
+save(food_prod_kcal_by_grappe, feed_prod_kcal_by_grappe, file = here('data', 'prod_kcal_by_grappe.RData'))
+  
+```

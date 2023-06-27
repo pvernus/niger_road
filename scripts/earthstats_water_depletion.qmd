@@ -1,0 +1,35 @@
+---
+title: "Water Depletion and WaterGap3 Basins"
+format: html
+editor: visual
+---
+
+**Source**: [Water Depletion and WaterGap3 Basins - EarthStat](http://www.earthstat.org/water-depletion-watergap3-basins/)
+
+**Spatial Reference:** GCS_WGS_1984
+
+**Annual water depletion categories**
+
+1= \<5%\
+2= 5-25%\
+5= Dry-Year\
+6= Seasonal\
+7= 75-100%\
+8= \>100%
+
+```{r}
+load(here('data', 'grappe_gps.RData'))
+
+water_depletion <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'WaterDepletionCat_WG3.tiff'))
+
+# terra::crs(water_depletion)
+
+water_depletion_by_grappe <- water_depletion %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  group_by(id) %>% 
+    summarize(water_depletion = sum(value * coverage_fraction) / sum(coverage_fraction))
+
+save(water_depletion_by_grappe, file = here('data', 'water_depletion.RData'))
+  
+```

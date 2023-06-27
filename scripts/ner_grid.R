@@ -1,13 +1,19 @@
 source("scripts/library.R") # load packages
+load("data/ner_adm.RData")
 
 # import country boundaries data
-ner_border <- st_read("data_raw/ner_adm00_feb2018/NER_adm00_feb2018.shp") %>% st_as_sf()
-st_crs(ner_border) = 4326
+# ner_border <- st_read("data_raw/ner_adm00_feb2018/NER_adm00_feb2018.shp") %>% st_as_sf()
+# st_crs(ner_border) = 4326
+
+ner_border <- ner_adm00
 
 # Generate a dggs specifying an intercell spacing of ~25 miles
 dggs <- dgconstruct(spacing=10, metric=FALSE, resround='nearest')
 #Get a grid covering Niger
 ner_dggrid <- dgshptogrid(dggs, "data_raw/ner_adm00_feb2018/NER_adm00_feb2018.shp")
+
+st_write(ner_adm00, here('data', 'ner_adm00.shp'))
+ner_dggrid <- dgshptogrid(dggs, here('data', 'ner_adm00.shp'))
 
 #Plot Niger borders and the grid
 ggplot() +
@@ -22,6 +28,8 @@ ner_grid <- st_intersection(ner_border, ner_dggrid) %>% # crop to Niger's border
   select(-c(objectid, iso2, iso3, nompay, adm_00))
 # add grid ID
 ner_grid <- ner_grid %>% mutate(grid_id = 1:length(lengths(ner_grid$geometry)))
+
+save(ner_grid, file = 'data/ner_grid.RData')
 
 # plot cropped grid
 ggplot() +

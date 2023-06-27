@@ -1,0 +1,33 @@
+---
+title: "Standard deviation of monthly maximum temperatures"
+format: html
+editor: visual
+---
+
+**Source**: [Historical monthly weather data --- WorldClim 1 documentation](https://www.worldclim.org/data/monthlywth.html)
+**Spatial Reference:** WGS 1984
+
+```{r}
+load(here('data', 'grappe_gps.RData'))
+
+files <- dir(pattern = "*.tif")
+files
+
+
+map()
+
+
+
+mean_temp <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'Mean_temp.tif'))
+
+# terra::crs(total_precipitation)
+
+mean_temp_by_grappe <- mean_temp %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  group_by(id) %>% 
+  summarize(mean_temp = sum(value * coverage_fraction) / sum(coverage_fraction))
+
+save(mean_temp_by_grappe, file = here('data', 'mean_temp.RData'))
+  
+```

@@ -1,0 +1,94 @@
+---
+title: "ACLED"
+format: html
+editor: visual
+---
+
+```{r load_adm_data}
+load("data/ner_adm.RData")
+```
+
+```{r load_acled_data}
+
+acled <- read_csv(here('data_raw', 'acled', 'acled_export_tool.csv')) %>% 
+  filter(region == 'Western Africa') %>% 
+  mutate(event_date = lubridate::dmy(event_date))
+
+west_africa_acled_sf <- st_as_sf(x = acled,                         
+                                 coords = c("longitude", "latitude"),
+                                 crs = "EPSG:4326")
+
+st_write(west_africa_acled_sf, here('data', 'west_africa_acled.shp'))
+st_read(here('data', 'west_africa_acled.shp'))
+
+```
+
+```{r}
+
+# Map
+tm_shape(adm02) +
+  tm_borders() +
+tm_shape(wa_acled_sf) +
+  tm_symbols(col="disorder_type", size = 'fatalities') +
+  tm_layout(legend.outside = TRUE)
+```
+
+```{r freq_vio_events}
+
+load("data/ner_adm.RData")
+load("data/grappes.RData")
+
+# Aggregate by grappe
+ner_acled_grappes <- west_africa_acled_sf %>%
+  filter(country == 'Niger') %>%   
+  select(event_id_cnty, fatalities) %>% 
+  mutate(grappes = st_nearest_feature(., grappe_sf, check_crs = TRUE))
+
+acled_by_grappe <- ner_acled_grappes %>% 
+  st_drop_geometry() %>% 
+  summarize(fatalities = sum(fatalities), 
+            freq_vio_events = length(event_id_cnty),
+            .by = "grappes") %>% 
+  arrange(desc(freq_vio_events))
+
+# Aggregate by ADM-2 (departement)
+ner_acled_adm2 <- west_africa_acled_sf %>%
+  filter(country == 'Niger') %>%   
+  select(event_id_cnty, admin1, admin2, event_date, fatalities)
+
+acled_by_adm2 <- st_join(ner_acled_adm2, ner_adm02) %>% 
+  select(event_id_cnty, fatalities, rowcacode1, rowcacode2) %>% 
+  rename(id_adm2 = rowcacode2) %>% 
+  st_drop_geometry() %>% 
+  summarize(fatalities = sum(fatalities),
+            freq_vio_events = length(event_id_cnty),
+            .by = "id_adm2") %>% 
+  arrange(desc(freq_vio_events))
+
+```
+
+```{r load_acled_humdata}
+
+# data source: HumData | Update: June 2023
+civilian_targeting <- read_excel(here("data_raw", "acled", "civilian_targeting_events_and_fatalities.xlsx"), 
+                                 sheet = "Data") %>% 
+  rename(id_adm2 = 'Admin2 Pcode', id_adm1 = 'Admin1 Pcode') %>% 
+  mutate(event_type = "civilian_targeting",
+         Year = years(Year)) %>% 
+  left_join(adm02, by = 'id_adm2', suffix = c("_acled", "_gamd"))
+                                                       
+demonstration <- read_excel(here("data_raw", "acled", "demonstration_events.xlsx"), 
+                            sheet = "HRP_2") %>% 
+  filter(Country == 'Niger') %>% 
+  rename(id_adm2 = 'Admin2 Pcode', id_adm1 = 'Admin1 Pcode') %>% 
+  mutate(event_type = "demonstration")
+
+political_violence <- read_excel(here("data_raw", "acled", "political_violence_events_and_fatalities.xlsx"), sheet = "HRP_2") %>% 
+  filter(Country == 'Niger') %>% 
+  rename(id_adm2 = 'Admin2 Pcode', id_adm1 = 'Admin1 Pcode') %>% 
+  mutate(event_type = "political_violence")
+
+acled_id_adm2_sf <- civilian_targeting %>% 
+  left_join(demonstration, by = 'id_adm2')
+
+```

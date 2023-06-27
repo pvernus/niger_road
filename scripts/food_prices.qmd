@@ -1,0 +1,303 @@
+---
+title: "Food prices"
+format: html
+editor: visual
+---
+
+```{r data_import}
+
+# load(here('data', 'food_prices.RData'))
+
+set_rhdx_config(hdx_site = "prod") # from the rhdx package
+get_rhdx_config()
+
+search_datasets("Niger - Food Prices", rows = 5)
+
+ner_food_prices <- pull_dataset("wfp-food-prices-for-niger") %>%
+  get_resource(1) %>%
+  read_resource()
+
+food_prices <- ner_food_prices %>% 
+  mutate(year = floor_date(date, "year")) %>% 
+  filter(year >= '2010-01-01' & year < '2023-01-01') %>% 
+  mutate(season = case_when(
+    month(date) %in% c(12, 01:04) ~ 'dry',
+    month(date) %in% c(05:07) ~ 'wet',
+    .default = "other"
+    )) # based on IPC periods
+
+market_coverage <- food_prices %>% summarize(max = max(date), min = min(date), .by = "market")
+
+food_prices <- food_prices %>% 
+  filter(!market %in% c('Chetimari', 'Falwel', 'Dan-Goulbi', 'Chadakori', 
+                        'Kanembakache', 'Maidjirgui', 'Jataka', 'Bonfeba', 
+                        'Soubdou', 'Sassoumbroum', 'Guidimouni')) %>% # filter out markets with coverage <= 2010
+  filter(priceflag == 'actual') %>% 
+  filter(!commodity == 'Beans (niebe)') # coverage stops im 2014
+
+price_market <- food_prices %>% 
+  select(admin1:longitude) %>% 
+  unique() %>% 
+  st_as_sf(coords = c("longitude", "latitude"))
+
+price_market_sf = st_set_crs(price_market, 4326)
+
+# save data
+save(food_prices, price_market_sf, file = here('data', 'food_prices.RData'))
+```
+
+```{r dev_avg_month}
+
+# Variation rate between monthly local market prices and national average
+
+food_prices_avg_year_deviation <- food_prices %>% 
+  filter(pricetype == 'Retail' & commodity %in% c('Maize', 'Millet', 'Sorghum')) %>%
+  group_by(month = floor_date(date, "month"), commodity) %>% 
+  mutate(mean_month = mean(price), # mean price by month for each commodity
+         dev_mean_month = 100 * (price - mean_month) / mean_month,
+         median_month = median(price),
+         dev_median_month = 100 * (price - median_month) / median_month
+         ) %>% 
+  ungroup()
+
+price_avg_year_deviation <- food_prices_avg_year_deviation %>% 
+  summarize(dev_mean_month = median(dev_mean_month, na.rm = TRUE), 
+            dev_median_month = median(dev_median_month, na.rm = TRUE),
+            .by = market)
+```
+
+```{r var_avg_year}
+
+# Standard deviation of prices 
+
+food_prices_year_variability <- food_prices %>% 
+  filter(pricetype == 'Retail') %>%
+  mutate(month = floor_date(date, "month")) %>% 
+  group_by(market, commodity, year) %>% 
+  summarize(annual_variability = sd(price))
+
+# Total
+food_prices_year_variability_total <- food_prices %>%
+  mutate(year = floor_date(date, "year")) %>% 
+  filter(year >= 2010 & pricetype == 'Retail') %>% 
+  group_by(year, month = floor_date(date, "month"), commodity) %>% 
+  summarize(annual_variability_total = sd(price))
+
+
+left_join(food_prices_year_variability, food_prices_year_variability_total, by = c('year', 'commodity'))
+```
+
+# Imported rice
+
+```{r conso_agg}
+
+load(here('data', 'short_survey.RData'))
+load(here('data', 'conso_survey.RData'))
+
+conso_agg <- conso_agg %>% 
+  mutate(food_cat = case_when(
+    codpr %in% 1:22 ~ 'Céréales et produits céréaliers',
+    codpr %in% 23:43 ~ 'Poisson, fruits de mer et, viande',
+    codpr %in% 44:52 ~ 'Lait et produits laitiers, oeufs',
+    codpr %in% 53:59 ~ 'Huile et graisse',
+    codpr %in% 60:71 ~ 'Fruits',
+    codpr %in% 72:91 ~ 'Légumes',
+    codpr %in% 92:103 ~ 'Légumineuses et graines',
+    codpr %in% 104:113 ~ 'Tubercules et plantains ',
+    codpr %in% 114:117 ~ 'Sucre',
+    codpr %in% 118:127 ~ 'Epices et condiments',
+    codpr == 128 ~ 'Autres produits alimentaires',
+    TRUE ~ 'Other'
+  ),
+  food_item = case_when(
+    codpr %in% c(1:2) ~ 'Riz local (type 1 et 2)',
+    codpr %in% c(3:4) ~ 'Riz importé (type 1 et 2)',
+    codpr %in% c(5:6) ~ 'Maïs (épi/grain)',
+    codpr == 7 ~ 'Mil',
+    codpr == 8 ~ 'Sorgho',
+    codpr == 9 ~ 'Blé',
+    codpr == 10 ~ 'Fonio',
+    codpr == 11 ~ 'Autres céréales',
+    codpr == 12 ~ 'Farine de maïs',
+    codpr == 13 ~ 'Farine de mil',
+    codpr == 14 ~ 'Farine de blé local ou importé',
+    codpr == 15 ~ 'Autres farines de céréales',
+    codpr == 16 ~ 'Pâtes alimentaires',
+    codpr == 17 ~ 'Pain moderne',
+    codpr == 18 ~ 'Pain traditionnel',
+    codpr == 19 ~ 'Croissants',
+    codpr == 20 ~ 'Biscuits',
+    codpr == 21 ~ 'Gâteaux',
+    codpr == 22 ~ 'Beignets, galettes',
+    codpr == 23 ~ 'Viande de bœuf',
+    codpr == 24 ~ 'Viande de chameau',
+    codpr == 25 ~ 'Viande de mouton',
+    codpr == 26 ~ 'Viande de chèvre',
+    codpr == 27 ~ 'Abats et tripes (foie, rognon, etc.)',
+    codpr == 28 ~ 'Viande de porc',
+    codpr == 29 ~ 'Poulet sur pied',
+    codpr == 30 ~ 'Viande de poulet',
+    codpr == 31 ~ 'Viande autres volailles domestiques',
+    codpr == 32 ~ 'Charcuterie (jambon, saucisson), conserves de viandes',
+    codpr == 33 ~ 'Gibiers',
+    codpr == 34 ~ 'Autres viandes n.d.a.',
+    codpr %in% c(35:38) ~ 'Poisson frais',
+    codpr %in% c(39:40) ~ 'Poisson fumé',
+    codpr == 41 ~ 'Poisson séché',
+    codpr == 42 ~ 'Crabes, crevettes et autres fruits de mer',
+    codpr == 43 ~ 'Conserves de poisson',
+    codpr == 44 ~ 'Lait frais',
+    codpr == 45 ~ 'Lait caillé, yaourt',
+    codpr %in% c(46:47) ~ 'Lait concentré (non-)sucré',
+    codpr == 48 ~ 'Lait en poudre',
+    codpr == 49 ~ 'Fromage',
+    codpr == 50 ~ 'Lait et farines pour bébé',
+    codpr == 51 ~ 'Autres produits laitiers',
+    codpr == 52 ~ 'Œufs',
+    codpr == 53 ~ 'Beurre',
+    codpr == 54 ~ 'Beurre de karité',
+    codpr == 55 ~ 'Huile de palme rouge',
+    codpr == 56 ~ 'Huile arachide',
+    codpr == 57 ~ 'Huile de coton',
+    codpr == 58 ~ 'Huile de palme raffinée',
+    codpr == 59 ~ 'Autres huiles n.d.a. (maïs, soja, huile palmiste, etc.)',
+    codpr == 60 ~ 'Mangue',
+    codpr == 61 ~ 'Ananas',
+    codpr == 62 ~ 'Orange',
+    codpr == 63 ~ 'Banane douce',
+    codpr == 64 ~ 'Citrons',
+    codpr == 65 ~ 'Autres agrumes',
+    codpr == 66 ~ 'Avocats',
+    codpr == 67 ~ 'Pastèque, Melon',
+    codpr == 68 ~ 'Dattes',
+    codpr == 69 ~ 'Noix de coco',
+    codpr == 70 ~ 'Canne à sucre',
+    codpr == 71 ~ 'Autres fruits (pommes, raisin, etc.)',
+    codpr == 72 ~ 'Salade (laitue)',
+    codpr == 73 ~ 'Choux',
+    codpr == 74 ~ 'Carotte',
+    codpr == 75 ~ 'Haricot vert',
+    codpr == 76 ~ 'Concombre',
+    codpr == 77 ~ 'Aubergine, Courge/Courgette',
+    codpr == 78 ~ 'Poivron frais',
+    codpr == 79 ~ 'Tomate fraîche',
+    codpr == 80 ~ 'Tomate séchée',
+    codpr == 81 ~ 'Gombo frais',
+    codpr == 82 ~ 'Gombo sec',
+    codpr == 83 ~ 'Oignon frais',
+    codpr == 84 ~ 'Ail',
+    codpr %in% c(85:88) ~ 'Feuilles locales',
+    codpr == 89 ~ 'Autres légumes en feuilles',
+    codpr == 90 ~ 'Autre légumes frais n.d.a.',
+    codpr == 91 ~ 'Concentré de tomate',
+    codpr == 92 ~ 'Petits pois',
+    codpr == 93 ~ 'Petit pois secs',
+    codpr == 94 ~ 'Autres légumes secs n.d.a.',
+    codpr == 95 ~ 'Niébé/Haricots secs',
+    codpr == 96 ~ 'Arachides fraîches en coques',
+    codpr == 97 ~ 'Arachides séchées en coques',
+    codpr == 98 ~ 'Arachides décortiquées ou pilées',
+    codpr == 99 ~ 'Arachide grillée',
+    codpr == 100 ~ 'Pâte arachide',
+    codpr == 101 ~ 'Sésame',
+    codpr == 102 ~ 'Noix de cajou',
+    codpr == 103 ~ 'Noix de karité',
+    codpr == 104 ~ 'Manioc',
+    codpr == 105 ~ 'Igname',
+    codpr == 106 ~ 'Plantain',
+    codpr == 107 ~ 'Pomme de terre',
+    codpr == 108 ~ 'Taro, macabo',
+    codpr == 109 ~ 'Patate douce',
+    codpr == 110 ~ 'Autres tubercules n.d.a.',
+    codpr == 111 ~ 'Farines de manioc',
+    codpr == 112 ~ 'Gari, tapioca',
+    codpr == 113 ~ 'Attiéke',
+    codpr == 114 ~ 'Sucre (poudre ou morceaux)',
+    codpr == 115 ~ 'Miel',
+    codpr == 116 ~ 'Chocolat à croquer, pâte à tartiner',
+    codpr == 117 ~ 'Caramel, bonbons, confiseries, etc.',
+    codpr == 118 ~ 'Sel',
+    codpr == 119 ~ 'Piment',
+    codpr == 120 ~ 'Gingembre',
+    codpr == 121 ~ 'Cube alimentaire (Maggi, Jumbo, etc.)',
+    codpr == 122 ~ 'Arôme (Maggi, Jumbo, etc.)',
+    codpr == 123 ~ 'Soumbala (moutarde africaine)',
+    codpr == 124 ~ 'Mayonnaise',
+    codpr == 125 ~ 'Vinaigre /moutarde',
+    codpr == 126 ~ 'Autres condiments (poivre etc.)',
+    codpr == 127 ~ 'Noix de cola',
+    codpr == 128 ~ 'Autres produits alimentaires',
+    TRUE ~ 'Other'
+  ),
+  region = as_factor(region),
+  milieu = as_factor(milieu),
+  modep = as_factor(modep)
+    )
+```
+
+```{r conso_imported_rice}
+
+conso_imp_rice <- conso_agg %>% 
+  select(hhid, vague, grappe, depan, dali, def_spa, def_temp, food_item) %>% 
+  mutate(sh_imp_rice = if_else(food_item == 'Riz importé (type 1 et 2)',
+    100*depan/dali, 0)) %>% # share of imported rice in households' food consumption
+  group_by(hhid) %>% 
+  slice(which.max(sh_imp_rice))
+
+```
+
+```{r price_imported_rice}
+
+price_imported_rice <- food_prices %>% 
+  filter(commodity == 'Rice (imported)' & pricetype == 'Retail') %>% 
+  group_by(month = floor_date(date, "month")) %>% 
+  mutate(mean_month = mean(price),
+         var_mean_month = 100 * (price - mean_month) / mean_month,
+         median_month = median(price),
+         var_median_month = 100 * (price - median_month) / median_month
+         ) %>% 
+  ungroup()
+
+price_imported_rice %>% 
+  summarize(var_median_month = median(var_median_month, na.rm = TRUE), 
+            var_mean_month = mean(var_mean_month, na.rm = TRUE), 
+            .by = market)
+
+food_prices %>% 
+  filter(commodity %in% c('Rice (imported)', 'Rice (local)') & pricetype == 'Retail') %>% 
+  ggplot(aes(x = date, y = price)) +
+  geom_line(aes(col = commodity)) +
+  facet_wrap(~market)
+```
+
+# Seasonality
+
+```{r}
+
+seasonality_year <- food_prices %>% 
+  filter(pricetype == 'Retail' & commodity %in% c('Maize', 'Millet', 'Sorghum')) %>% 
+  group_by(market, commodity, year, season) %>% 
+  summarize(price = mean(price)) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = season, values_from = price) %>% 
+  mutate(price_change_season = round(100 * (wet - dry) / dry, 2)) # variation rate
+
+seasonality <- seasonality_year %>% 
+  summarize(price_change_season = median(price_change_season, na.rm = TRUE), .by = market)
+
+ggplot(seasonality_year, aes(x = commodity, y = price_change_season)) +
+  geom_boxplot(aes(col = commodity)) +
+  geom_hline(yintercept=0, linetype="dashed", 
+                color = "red", size=1) +
+  facet_wrap(~year) +
+  theme_minimal()
+
+```
+
+```{r}
+
+# nngeo::st_nn(grappe_sf, price_market_sf, k = 2)
+st_join(grappe_sf, price_market_sf, join = nngeo::st_nn, k = 1, progress = FALSE) # k = 2 for less sensitivity?
+
+
+```

@@ -146,25 +146,56 @@ food_security_b1 <- add_id_and_wght(s08b1_me_food_sec)
 food_security_b2 <- add_id_and_wght(s08b2_me_fodd_sec)
 
 # specifying the survey sample design
-survey_desgn <- svydesign(id = ~ grappe+hhid, 
+survey_design <- svydesign(id = ~ grappe+hhid, 
           strata = ~ region+zae, 
           weights = ~ hhweight, 
           data = survey_welfare, nest = TRUE)
 
+# grappes / EAs
+
+grappe_gps_survey <- grappe_gps_ner2018 |> 
+  left_join(survey_welfare |> select(grappe, id_adm2, hhweight), by = "grappe") |> 
+  distinct(grappe, .keep_all = TRUE)
+
+grappe_gps <- grappe_gps_survey |> 
+  filter(!is.na(coordonnes_gps__Latitude))
+
+grappe_gps <- grappe_gps |> 
+  rename(gps_accuracy = "coordonnes_gps__Accuracy", gps_alt = "coordonnes_gps__Altitude",
+         x = "coordonnes_gps__Longitude", y = "coordonnes_gps__Latitude")
+
+# transform to sf 
+grappe_sf = st_as_sf(grappe_gps, 
+                     coords = c("x", "y"),
+                     crs = 4326,
+                     agr = "constant")
+
+# Buffer
+grappe_buffer <- st_buffer(grappe_sf, dist = 10000) # 10km radius
+
+tm_shape(grappe_buffer) +
+  tm_polygons(alpha = 0) +
+  tm_shape(grappe_sf) +
+  tm_symbols(col = "red", size = .1)
+
 # save data
-save(ehcvm_individu_ner2018, ehcvm_menage_ner2018, ehcvm_welfare_ner2018, grappe_gps_ner2018, # pre-processed
+save(ehcvm_individu_ner2018, ehcvm_menage_ner2018, ehcvm_welfare_ner2018, 
+     grappe_gps_ner2018, grappe_gps_survey, grappe_gps, grappe_sf, grappe_buffer, # EAs GPS coordinates
      s03_co_agric, # agriculture
      s04_me_employment, s04_co_employment, # employment
      ehcvm_conso_agg, s07b_me_food_cons, # food consumption
      s08a_me_food_sec, s08b1_me_food_sec, s08b2_me_fodd_sec, # food security
      s10_1_me_nagric_ent, s10_2_me_nagric_ent, # non-agricultural enterprises
      s16a_me_agric, s16c_me_agric, # agriculture
-     survey_ind, survey_menage, survey_welfare, survey_desgn, # clean/processed data
+     survey_ind, survey_menage, survey_welfare, survey_design, # clean/processed data
      food_security_a, food_security_b1, food_security_b2, # processed food security data
      file = 'data/full_survey.RData')
 
-save(survey_ind, survey_menage, survey_welfare, survey_desgn, # clean/processed data
-     food_security_a, food_security_b1, food_security_b2, # processed food security data
+save(grappe_gps_ner2018, grappe_gps_survey, grappe_gps, grappe_sf, grappe_buffer,
+     file = 'data/grappe_gps.RData')
+
+save(survey_ind, survey_menage, survey_welfare, survey_design, # clean/processed data
+     ehcvm_individu_ner2018, ehcvm_conso_agg,
      file = 'data/short_survey.RData')
 
 
@@ -363,6 +394,12 @@ conso_agg_w <- conso_agg %>%
 
 save(fcons, fcons_w, conso_agg, conso_agg_w, file = 'data/conso_survey.RData')
 
+
+
+
+
+
+##################################################################################################################################
 
 # Plots
 
