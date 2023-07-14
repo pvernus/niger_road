@@ -35,21 +35,24 @@ tm_shape(wa_acled_sf) +
 
 ```{r freq_vio_events}
 
-load("data/ner_adm.RData")
-load("data/grappes.RData")
+load(here('data', 'ner_adm.RData'))
+load(here('data', 'grappes.RData'))
 
 # Aggregate by grappe
 ner_acled_grappes <- west_africa_acled_sf %>%
   filter(country == 'Niger') %>%   
   select(event_id_cnty, fatalities) %>% 
-  mutate(grappes = st_nearest_feature(., grappe_sf, check_crs = TRUE))
+  mutate(grappe = st_nearest_feature(., grappe_sf, check_crs = TRUE))
 
-acled_by_grappe <- ner_acled_grappes %>% 
+freq_vio_events_by_grappe <- ner_acled_grappes %>% 
   st_drop_geometry() %>% 
   summarize(fatalities = sum(fatalities), 
             freq_vio_events = length(event_id_cnty),
             .by = "grappes") %>% 
   arrange(desc(freq_vio_events))
+
+save(freq_vio_events_by_grappe, file = here('data', 'freq_vio_events.RData'))
+
 
 # Aggregate by ADM-2 (departement)
 ner_acled_adm2 <- west_africa_acled_sf %>%

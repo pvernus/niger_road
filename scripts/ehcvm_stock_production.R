@@ -28,4 +28,6 @@ stock_prod <- stock %>%
   )
 
 stock_prod <- left_join(grappe_gps_ner2018 %>% select(grappe), stock_prod, by = 'grappe') %>% 
-  replace_na(list(qte_stock = 0, qte_total = 0, pct_stock = 0))
+  replace_na(list(qte_stock = 0, qte_total = 0, prod_stock = 0))
+
+save(stock_prod, file = here('data', 'stock_prod.RData'))

@@ -113,3 +113,17 @@ food_fte <- food_employment %>%
   rowwise() %>% 
   mutate(fte_total = sum(c(fte_agriculture, fte_processing, fte_marketing, fte_away_home))) %>% 
   ungroup()
+
+
+# Group by grappe/EAs 
+food_fte_by_grappe <- left_join(survey_welfare %>% select(hhid, grappe), food_fte, by = 'hhid') %>% 
+  group_by(grappe) |>
+  summarize(
+    empl_food_agriculture = sum(fte_agriculture)/sum(fte_total), 
+    empl_food_processing = sum(fte_processing)/sum(fte_total),
+    empl_food_marketing = sum(fte_marketing)/sum(fte_total),
+    empl_food_away_home = sum(fte_away_home)/sum(fte_total)
+  )
+
+# save data
+save(food_fte_by_grappe, file = here('data', 'food_employment.RData'))

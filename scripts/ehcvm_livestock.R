@@ -6,12 +6,19 @@ editor: visual
 
 ```{r}
 
+load(here('data', 'short_survey.RData')) # survey_welfare
+
 s17_me_agric <- read_dta('data_raw/ner_2018_ehcvm/s17_me_ner2018.dta') %>% 
-  select(grappe, menage, espece_code1 = s17q01, espece_code2 = s17q02, qte_livestock = s17q05) %>% 
+  select(grappe, menage, espece_code1 = s17q01, 
+         espece_code2 = s17q02, 
+         qte_livestock = s17q05) %>% 
   mutate(espece_code1 = as_factor(espece_code1),
          espece_code2 = as_factor(espece_code2))
 
-livestock <- left_join(survey_welfare %>% select(grappe, menage, hhid), s17_me_agric, by = c("grappe", "menage")) %>% 
+livestock <- left_join(survey_welfare %>% 
+                         select(grappe, menage, hhid), 
+                       s17_me_agric, 
+                       by = c("grappe", "menage")) %>% 
   mutate(
     espece_code2 = as_factor(espece_code2),
     TLU = case_when(
@@ -27,32 +34,26 @@ livestock <- left_join(survey_welfare %>% select(grappe, menage, hhid), s17_me_a
       espece_code2 == 'Pintades' ~ .01,
       espece_code2 == 'Autres volailles' ~ .01
     )
-  )
+  ) %>% 
+    mutate(livestock_tlu = sum(qte_livestock * TLU), .by = c(grappe, hhid)) %>% 
+  mutate(large_livestock = if_else(espece_code2 %in% c('Bovins (boeufs)', 'Camelins (Chameaux)'), 1, 0))
 
-livestock <- livestock %>% 
-  mutate(livestock_tlu = sum(qte_livestock * TLU), .by = c(grappe, hhid)) %>% 
-  mutate(large_livestock = if_else(espece_code2 %in% c('Bovins (boeufs)', 'Camelins (Chameaux)'), 1, 0)) %>% 
-  mutate(
+livestock_by_grappe <- livestock %>%
+  summarize(
     livestock_tlu_total = sum(livestock_tlu, na.rm = TRUE),
     livestock_tlu_avg = mean(livestock_tlu, na.rm = TRUE),
     livestock_tlu_median = median(livestock_tlu, na.rm = TRUE),
     livestock_large_pct = 100 * sum(large_livestock, na.rm = TRUE) / n(),
     .by = grappe
-  )
+  ) %>% 
+  replace_na(list(livestock_tlu_avg = 0, livestock_tlu_median = 0))
 
-
-
-
-
-
-
-  
-save(livestock, file = here('data', 'livestock.RData'))
+save(livestock, livestock_by_grappe, file = here('data', 'livestock.RData'))
 
 ```
 
 | Animal category        | TLU (Ahmed and Mesfin, 2017) | TLU (Rout, Kumar, and Behera, 2019) |
-|------------------------|------------------------------|-------------------------------------|
+|-------------------|------------------------|-----------------------------|
 | Calf                   | 0.25                         |                                     |
 | Donkey (young)         | 0.35                         |                                     |
 | Weaned Calf            | 0.34                         |                                     |

@@ -13,7 +13,6 @@ load(here('data','ner_adm.RData'))
 food_prod_kcal <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'GlbFoodkcal.tiff')) %>% crop(ner_adm00)
 feed_prod_kcal <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'GlbFeedkcal.tiff')) %>% crop(ner_adm00)
 
-
 food_prod_kcal_by_grappe <- food_prod_kcal %>% 
   exactextractr::exact_extract(grappe_buffer) %>% 
   rbindlist(idcol = "id") %>% 
@@ -24,8 +23,19 @@ feed_prod_kcal_by_grappe <- feed_prod_kcal %>%
   exactextractr::exact_extract(grappe_buffer) %>% 
   rbindlist(idcol = "id") %>% 
   group_by(id) %>% 
-  summarize(feed_prod_kcal = sum(value * coverage_fraction) / sum(coverage_fraction))            
+  summarize(feed_prod_kcal = sum(value * coverage_fraction) / sum(coverage_fraction))  
 
-save(food_prod_kcal_by_grappe, feed_prod_kcal_by_grappe, file = here('data', 'prod_kcal_by_grappe.RData'))
+# merge 
+food_prod_kcal <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(food_prod_kcal_by_grappe, by = "id") %>% 
+  mutate(food_prod_kcal = if_else(food_prod_kcal == 'NaN', 0, food_prod_kcal))
+
+feed_prod_kcal <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(feed_prod_kcal_by_grappe, by = "id") %>% 
+  mutate(feed_prod_kcal = if_else(feed_prod_kcal == 'NaN', 0, feed_prod_kcal))
+
+save(food_prod_kcal_by_grappe, food_prod_kcal, feed_prod_kcal_by_grappe, feed_prod_kcal, file = here('data', 'prod_kcal_by_grappe.RData'))
   
 ```

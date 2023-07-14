@@ -1,95 +1,26 @@
-# load("data/ipc_sf.RData")
-# load("data/network.RData")
-# load("data/ner_adm.RData")
-
-# Plot betweeness scores
-ggplot(nodes_ner, aes(x = betweenness_dist)) +
-  geom_histogram() +
-  theme_minimal()
-
-ggplot(lines_ner, aes(x = edge_betweenness_dist)) +
-  geom_histogram() +
-  theme_minimal()
-
-
-gg_nodes <- nodes_ner %>% 
-  filter(degree != 2) %>% 
-  st_join(adm03) %>% 
-  mutate(
-    percent_rank_betweenness = percent_rank(betweenness_dist),
-    criticality_betweenness = as_factor(case_when(
-      percent_rank_betweenness >= .99 ~ "Top criticality (P99)",
-      percent_rank_betweenness >= .95 & percent_rank_betweenness < .99 ~ "High criticality (P95-P99)",
-      .default = "Medium - Low criticality (P90)"
-    ))
-         )
-
-gg_lines <- lines_ner %>% 
-  st_join(adm03) %>% 
-  mutate(
-    percent_rank_betweenness = percent_rank(edge_betweenness_dist),
-    criticality_betweenness = as_factor(case_when(
-      percent_rank_betweenness >= .99 ~ "Top criticality (P99)",
-      percent_rank_betweenness >= .95 & percent_rank_betweenness < .99 ~ "High criticality (P95-P99)",
-      .default = "Medium - Low criticality (P90)"
-    ))
-  )
-
-tmap_mode("view")
-
-m1 <- tm_shape(gg_nodes) +
-  tm_bubbles(col = "criticality_betweenness", scale = .1, alpha = .5, border.col = NA,
-             palette = c("grey90", "orange", "red")) +
-tm_shape(gg_lines) +
-  tm_lines(col = "criticality_betweenness", alpha = .5,
-           palette = c("grey90", "orange", "red"))
-
-tmap_save(m1, "outputs/top_criticality_betw.html", selfcontained = TRUE)
-
-  
 ## SIMULATION: Floods in Tsernaoua ##
 
-graph_bau <- ner_graph %>%
-  st_join(adm03) %>% 
-  activate(nodes) %>%
-  mutate(
-    betweenness_bau = scales::rescale(
-      centrality_betweenness(weights = weight), to = c(0, 1)),
-    closeness_bau = scales::rescale(
-      centrality_closeness_harmonic(), to = c(0, 1))
-  ) %>% 
-  activate(edges) %>%
-  mutate(
-    edge_betweenness_bau = scales::rescale(
-      centrality_edge_betweenness(weights = weight, directed = FALSE),
-      to = c(0, 1))
-  )
+graph_bau <- graph
 
-Tsernaoua_poly <- adm03 %>% 
-  filter(id_adm3 == "NER005003004") # Tsernaoua
-
-(31262181, 31262752, 183339227, 183339240, 194283943, 194283945, 194283946, 302230802, 302230804, 302237263, 302237264, 302237265, 302237266, 302237268, 302237270, 302237272, 302237273, 302237274, 302237276, 302237277, 302237278, 444806683, 444806684, 444806688, 444941457, 444941459, 444941460, 444941461, 444941462, 444941463, 444941995, 444941996, 444941997, 444941998, 444941999, 444942000, 444942001, 444942002, 444942003, 444942004, 444942005, 444942006, 680304447, 680304448, 680311315, 680311316, 680311317, 680311318, 680311319, 680311320, 680311321, 680311322, 680311323, 680311324, 680551174, 680551177, 964181466, 964181467, 964181468, 964181469, 964181470, 964181471, 964181472, 1024303215)
-
+# Edges' osm_id between Tillaberi and Niamey
+tillaberi_niamey <- c(31262181, 31262752, 183339227, 183339240, 194283943, 194283945, 194283946, 302230802, 302230804, 302237263, 302237264, 302237265, 302237266, 302237268, 302237270, 302237272, 302237273, 302237274, 302237276, 302237277, 302237278, 444806683, 444806684, 444806688, 444941457, 444941459, 444941460, 444941461, 444941462, 444941463, 444941995, 444941996, 444941997, 444941998, 444941999, 444942000, 444942001, 444942002, 444942003, 444942004, 444942005, 444942006, 680304447, 680304448, 680311315, 680311316, 680311317, 680311318, 680311319, 680311320, 680311321, 680311322, 680311323, 680311324, 680551174, 680551177, 964181466, 964181467, 964181468, 964181469, 964181470, 964181471, 964181472, 1024303215)
 
 graph_sim <- graph_bau %>% 
-  activate(nodes) %>%
-  filter(node_is_disjoint(Tsernaoua_poly)) %>% 
+  activate(edges) %>%
+  filter(!osm_id %in% tillaberi_niamey) %>% 
   mutate(
-    degree = centrality_degree(),
+    edge_betweenness_sim = scales::rescale(
+      centrality_edge_betweenness(weights = weight), to = c(0, 1)),
+    diff = edge_betweenness_bau - edge_betweenness_sim
+  ) %>%
+  activate(nodes) %>% 
+  mutate(
     betweenness_sim = scales::rescale(
       centrality_betweenness(weights = weight), to = c(0, 1)),
     closeness_sim = scales::rescale(
       centrality_closeness_harmonic(), to = c(0, 1)),
     diff_betw = betweenness_sim - betweenness_bau,
-    diff_clos = closeness_sim - closeness_bau
-  ) %>% 
-  activate(edges) %>% 
-  filter(edge_is_disjoint(Tsernaoua_poly)) %>% 
-  mutate(
-    edge_betweenness_sim = scales::rescale(
-      centrality_edge_betweenness(weights = weight), to = c(0, 1)),
-    diff = edge_betweenness_bau - edge_betweenness_sim
-    ) %>% 
+    diff_clos = closeness_sim - closeness_bau) %>%  
   as_sfnetwork()
 
 lines_sim <- graph_sim %>% activate(edges) %>% as_tibble() %>% st_as_sf()
@@ -103,7 +34,7 @@ tmap_mode("view")
 
 m2 <- tm_shape(lines_sim) +
   tm_lines(col = 'grey', alpha = .3) +
-tm_shape(nodes_sim) +
+  tm_shape(nodes_sim) +
   tm_bubbles(
     col = "diff_betw",
     title.col = "Centrality loss/gain",
@@ -115,7 +46,7 @@ tm_shape(nodes_sim) +
     border.lwd = NA,
     style = "cont"
   ) +
-tm_shape(Tsernaoua_poly) +
+  tm_shape(Tsernaoua_poly) +
   tm_polygons(col = "red")
 
 tmap_save(m2, "outputs/simulation_test_map.html", selfcontained = TRUE)
@@ -125,9 +56,9 @@ tmap_mode("plot")
 
 m3 <- tm_shape(adm03) +
   tm_borders(col = "grey") +
-tm_shape(lines_sim) +
+  tm_shape(lines_sim) +
   tm_lines(col = 'lightblue', alpha = .5) +
-tm_shape(nodes_sim) +
+  tm_shape(nodes_sim) +
   tm_bubbles(
     col = "diff_betw",
     title.col = "Centrality gain/loss",
@@ -139,13 +70,13 @@ tm_shape(nodes_sim) +
     scale = .4,
     style = "cont"
   ) +
-tm_shape(Tsernaoua_poly) +
+  tm_shape(Tsernaoua_poly) +
   tm_polygons(col = "red") +
-tm_scale_bar(position = c("center", "bottom")) +
-tm_layout(title = "Simulation: flooding risks in Tsernaoua", 
-          title.size = .9, legend.title.size = .9, asp = 0, 
+  tm_scale_bar(position = c("center", "bottom")) +
+  tm_layout(title = "Simulation: flooding risks in Tsernaoua", 
+            title.size = .9, legend.title.size = .9, asp = 0, 
             legend.stack = "horizontal") +
-tm_compass(type = "rose", size = 2)
+  tm_compass(type = "rose", size = 2)
 
 tmap_save(m3, "outputs/simulation_test_map.png", width=1920, height=1080, asp=0)
 
@@ -213,7 +144,7 @@ ipc_sim <- ipc %>%
   summarize(
     population = mean(population, na.rm = TRUE),
     phase_class = round(mean(phase_class, na.rm = TRUE), 0)
-    )
+  )
 
 nodes_sim_ipc <- nodes_sim %>% 
   st_drop_geometry() %>% 
@@ -221,7 +152,7 @@ nodes_sim_ipc <- nodes_sim %>%
   group_by(id_adm2, adm_02) %>% 
   summarize(
     diff_clos = mean(diff_clos, na.rm = TRUE),
-    )
+  )
 
 df <- nodes_sim_ipc %>% 
   left_join(ipc_sim, by = "id_adm2") %>% 
@@ -229,9 +160,9 @@ df <- nodes_sim_ipc %>%
   summarize(
     population = mean(population, na.rm = TRUE),
     diff_clos = mean(diff_clos, na.rm = TRUE),
-    ) %>% 
+  ) %>% 
   filter(!is.na(phase_class))
-  
+
 df$w <- cumsum(df$population)
 df$wm <- df$w - df$population
 df$wt <- with(df, wm + (w - wm)/2)
@@ -271,7 +202,7 @@ df_facet$wm <- df_facet$w - df_facet$population
 df_facet$wt <- with(df_facet, wm + (w - wm)/2)
 
 p + geom_rect(aes(xmin = wm, xmax = w,
-                        ymax = diff_clos, fill = as_factor(phase_class))) +
+                  ymax = diff_clos, fill = as_factor(phase_class))) +
   labs(x = "Population", y = "Average closenness loss") +
   scale_fill_brewer(name = "Integrated Food Security Phase Classification", 
                     palette = "YlOrRd") + 
@@ -279,7 +210,3 @@ p + geom_rect(aes(xmin = wm, xmax = w,
   theme_minimal() +
   theme(legend.direction="horizontal", legend.position="bottom") +
   facet_wrap(~adm_01, scales = "free_x")
-
-
-
-

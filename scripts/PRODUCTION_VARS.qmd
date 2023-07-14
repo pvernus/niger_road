@@ -1,0 +1,71 @@
+---
+title: "Production indicators"
+format: html
+editor: visual
+---
+
+```{r grappe}
+
+load(here('data', 'grappe_gps.RData'))
+```
+
+# Potential
+
+```{r potential}
+# Load data
+load(here('data', 'cropland_production.RData')) # croplands vars
+load(here('data', 'water_depletion.RData')) # water depletion var
+load(here('data', 'total_precipitation.RData')) # total precipitation
+load(here('data', 'mean_temp.RData')) # mean annual temperature
+
+# Merge with EAs/grappes
+potential <- croplands %>% 
+  select(grappe, croplands_2019_netgain, croplands_2019_netloss) %>% 
+  left_join(water_depletion %>% st_drop_geometry() %>%
+              select(grappe, water_depletion),
+            by = 'grappe') %>% 
+  left_join(total_precipitation %>% st_drop_geometry() %>% 
+            select(grappe, total_precipitation),
+            by = 'grappe') %>% 
+  left_join(mean_temp %>% st_drop_geometry() %>% 
+            select(grappe, mean_temp),
+            by = 'grappe')
+
+```
+
+# Availability
+
+```{r availability}
+
+load(here('data', 'cropland_production.RData')) # Major crop productions
+load(here('data', 'prod_kcal_by_grappe.RData')) # Total kilocalories produced for food/feed
+load(here('data', 'auto_consumption.RData')) # Share of auto-consumption in total food consumption
+load(here('data', 'stock_prod.RData')) # Share of households' food production in stock
+load(here('data', 'food_employment.RData')) # Share of agri-food employment through the supply chain
+
+# Merge with EAs/grappes
+availability <- auto_conso_by_grappe %>% 
+  left_join(stock_prod %>% select(grappe, prod_stock), by = "grappe") %>% 
+  left_join(food_fte_by_grappe, by = "grappe") %>% 
+  left_join(crop_production %>% 
+              select(grappe, crop_production_diversity, crop_production_total) %>%
+              st_drop_geometry(), 
+            by = "grappe") %>% 
+  replace_na(list(crop_production_diversity = 0, crop_production_total = 0)) %>% 
+  left_join(food_prod_kcal %>% 
+              select(grappe, food_prod_kcal) %>% 
+              st_drop_geometry(),
+            by = "grappe") %>% 
+  left_join(feed_prod_kcal %>% 
+              select(grappe, feed_prod_kcal) %>% 
+              st_drop_geometry(),
+            by = "grappe")
+  
+```
+
+```{r production}
+
+production <- left_join(potential, availability, by = 'grappe')
+
+save(production, file = here('data', 'production.RData'))
+```

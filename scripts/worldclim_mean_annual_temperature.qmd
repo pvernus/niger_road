@@ -4,8 +4,7 @@ format: html
 editor: visual
 ---
 
-**Source**: [Historical monthly weather data --- WorldClim 1 documentation](https://www.worldclim.org/data/monthlywth.html)
-**Spatial Reference:** WGS 1984
+**Source**: [Historical monthly weather data --- WorldClim 1 documentation](https://www.worldclim.org/data/monthlywth.html) **Spatial Reference:** WGS 1984
 
 ```{r}
 load(here('data', 'grappe_gps.RData'))
@@ -20,6 +19,11 @@ mean_temp_by_grappe <- mean_temp %>%
   group_by(id) %>% 
   summarize(mean_temp = sum(value * coverage_fraction) / sum(coverage_fraction))
 
-save(mean_temp_by_grappe, file = here('data', 'mean_temp.RData'))
+# merge 
+mean_temp <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(mean_temp_by_grappe, by = "id")
+
+save(mean_temp, file = here('data', 'mean_temp.RData'))
   
 ```

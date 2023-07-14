@@ -34,18 +34,16 @@ food_prod <- hh_food_prod %>%
 # merge with livestock 
 load(here('data', 'livestock.RData'))
 
-agri_activity <- livestock %>% 
+join_large_livestock_landless_by_grappe <- livestock %>% 
   select(grappe, hhid, large_livestock) %>% 
   group_by(grappe, hhid) %>% 
   summarize(large_livestock = max(large_livestock)) %>% 
+  ungroup() %>% 
   left_join(food_prod %>% 
-              select(grappe, hhid, landless) %>% 
-              group_by(grappe, hhid) %>% 
-              summarize(landless = max(landless)),
-            by = 'hhid') %>% 
-  rename(grappe = grappe.x) %>% select(-grappe.y)
+              select(hhid, landless) %>% 
+              summarize(landless = max(landless), .by = "hhid"))
 
-agri_activity_hhid <- agri_activity %>%
+agri_activity_by_hhid <- join_large_livestock_landless_by_grappe %>%
   mutate(
     cropping_only = if_else(large_livestock == 0 & landless == 0, 1, 0),
     landless_only = if_else(large_livestock == 0 & landless == 1, 1, 0),
@@ -59,7 +57,7 @@ agri_activity_hhid <- agri_activity %>%
     ))
   )
 
-agri_activity <- agri_activity_hhid %>% 
+pivot_longer_agri_activity_by_grappe <- agri_activity_by_hhid %>% 
   pivot_longer(
     cols = cropping_only:landless_pastoral,
     names_to = 'agri_activity_type',
@@ -73,6 +71,23 @@ agri_activity <- agri_activity_hhid %>%
     agri_activity = 100 * value / sum(value),
     .by = grappe
   )
+
+agri_activity_by_grappe <- pivot_longer_agri_activity_by_grappe %>% 
+  filter(value > 0) %>% 
+  pivot_wider(names_from = agri_activity_type,
+              values_from = agri_activity) %>% 
+  summarize(
+    landless_only = sum(landless_only, na.rm = TRUE),
+    landless_pastoral = sum(landless_pastoral, na.rm = TRUE),
+    cropping_only = sum(cropping_only, na.rm = TRUE),
+    cropping_pastoral = sum(cropping_pastoral, na.rm = TRUE),
+    .by = 'grappe'
+  )
+
+save(agri_activity_by_grappe, file = here('data', 'agri_activity.RData'))
+
+
+
 
 load(here('data','conso_survey.RData'))
 

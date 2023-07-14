@@ -1,0 +1,59 @@
+---
+title: "Consumption indicators"
+format: html
+editor: visual
+---
+
+```{r grappe}
+
+load(here('data', 'grappe_gps.RData'))
+```
+
+# Access
+
+```{r access}
+
+load(here('data', 'price_market.RData')) # food prices at local markets
+load(here('data', 'road_distance.RData')) # road distance to closest market, main road, and school
+load(here('data', 'livestock.RData')) # livestock assets (tropical livestock unit)
+load(here('data', 'poverty.RData')) # share of households under the national poverty line
+load(here('data', 'freq_vio_events.RData')) # frequency of violent events
+load(here('data', 'agri_activity.RData')) # agro-pastoral activities
+load(here('data', 'asset.RData')) # car
+
+access <- left_join(price_market_by_grappe %>% 
+            select(grappe, price_diff_mean, price_diff_median, 
+                   price_change_season_mean, price_change_season_median),
+          distance_main_road_by_grappe,
+          by = 'grappe'
+          ) %>% 
+  left_join(distance_market_by_grappe, by = 'grappe') %>% 
+  left_join(livestock_by_grappe, by = 'grappe') %>% 
+  left_join(poverty_by_grappe, by = 'grappe') %>% 
+  left_join(freq_vio_events_by_grappe, by = 'grappe') %>%
+    replace_na(list(fatalities = 0, freq_vio_events = 0)) %>% 
+  left_join(agri_activity_by_grappe, by = 'grappe') %>% 
+  left_join(asset_by_grappe %>% select(grappe, car), by = 'grappe')
+  
+```
+
+# Utilization
+
+```{r utilization}
+
+load(here('data', 'diet.RData')) # healthy and varied diet
+load(here('data', 'asset.RData')) # fridge, cooking stove, waste system
+load(here('data', 'road_distance.RData')) # road distance to closest market, main road, and school
+
+utilization <- left_join(diet_by_grappe, distance_school_by_grappe, by = 'grappe') %>% 
+    left_join(asset_by_grappe %>% select(grappe, fridge, cooking_stove, waste), by = 'grappe')
+
+```
+
+```{r consumption}
+
+consumption <- left_join(access, utilization, by = 'grappe')
+
+save(consumption, file = here('data', 'consumption.RData'))
+
+```

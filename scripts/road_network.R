@@ -130,17 +130,16 @@ graph <- ner_graph %>%
 
 
 lines_ner <- graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()
-st_write(lines_ner, "data/lines_ner.shp", append = TRUE)
+st_write(lines_ner, here('data', 'lines_ner.shp'), append = TRUE)
 # st_read("data/lines_ner.shp")
 
 nodes_ner <- graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf()
-st_write(nodes_ner, "data/nodes_ner.shp", append = TRUE)
+st_write(nodes_ner, here('data', 'nodes_ner.shp'), append = TRUE)
 # st_read("data/nodes_ner.shp")
 
 
 ## save raw data
-save(lines_clean,
-     lines_ner,
+save(lines_ner,
      nodes_ner,
      ner_graph,
      graph,

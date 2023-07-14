@@ -2,52 +2,52 @@ od_matrix_marketplace <- read.csv(here('data_raw', 'od_matrix_marketplace.csv'))
 od_matrix_main_road <- read.csv(here('data_raw', 'od_matrix_main_road.csv'))
 od_matrix_school <- read.csv(here('data_raw', 'od_matrix_school.csv'))
 
-region_main_road <- read_sf(here('data_raw', 'region_data', 'region_main_road_network.gpkg')) %>% 
-  select(full_id:highway, type, route, name)
-
-road_leon <- read_sf(here('data_raw', 'leon_data', 'shapefiles', 'Road_network.shp'))
-
-
-school_osm <- read_sf(here('data_raw', 'region_data', 'schools_osm', 'Schools.shp'))
+# region_main_road <- read_sf(here('data_raw', 'region_data', 'region_main_road_network.gpkg')) %>% select(full_id:highway, type, route, name)
+# road_leon <- read_sf(here('data_raw', 'leon_data', 'shapefiles', 'Road_network.shp'))
+# school_osm <- read_sf(here('data_raw', 'region_data', 'schools_osm', 'Schools.shp'))
 
 load(here('data', 'grappes.RData'))
-load(here('data', 'ner_adm.RData'))
+# load(here('data', 'ner_adm.RData'))
 
-# MARKETPLACE
+## MARKETPLACE
 
 distance_marketplace <- od_matrix_marketplace %>% 
   rename(grappe = origin_id) %>% 
   mutate(distance_marketplace = total_cost)
 
-grappe_distance_market <- distance_marketplace %>% 
+distance_market_by_grappe <- distance_marketplace %>% 
   group_by(grappe) %>% 
   slice_max(distance_marketplace, n = 1) %>% 
   select(grappe, distance_marketplace) %>% 
   unique()
 
-# MAIN ROAD
+## MAIN ROAD
 
 distance_main_road <- od_matrix_main_road %>% 
   rename(grappe = origin_id) %>% 
   mutate(distance_main_road = total_cost)
 
-grappe_distance_main_road <- distance_main_road %>% 
+distance_main_road_by_grappe <- distance_main_road %>% 
   group_by(grappe) %>% 
   slice_max(distance_main_road, n = 1) %>% 
   select(grappe, distance_main_road) %>% 
   unique()
 
-# SCHOOL
+## SCHOOL
 
 distance_school <- od_matrix_school %>% 
   rename(grappe = origin_id) %>% 
   mutate(distance_school = total_cost)
 
-grappe_distance_school <- distance_school %>% 
+distance_school_by_grappe <- distance_school %>% 
   group_by(grappe) %>% 
   slice_max(distance_school, n = 1) %>% 
   select(grappe, distance_school) %>% 
   unique()
+
+save(distance_market_by_grappe, distance_main_road_by_grappe, distance_school_by_grappe, file = here('data', 'road_distance.RData'))
+
+
 
 ## JOIN GRAPPE_DISTANCE
 

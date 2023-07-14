@@ -1,6 +1,7 @@
 load(here('data', 'ner_adm.RData'))
 load(here('data', 'grappe_gps.RData'))
 
+## LEON DATASETS
 # Import data sets
 croplands_2019 <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'croplands_2019.tif'))
 croplands_2019_netgain <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'croplands_2019_netgain.tif'))
@@ -32,9 +33,58 @@ croplands <- grappe_sf |>
   left_join(croplands_2019_netgain_by_grappe, by = "id") |>
   rename(croplands_2019_netgain = wght_mean) |>
   left_join(croplands_2019_netloss_by_grappe, by = "id") |>
-  rename(croplands_2019_netloss = wght_mean)
+  rename(croplands_2019_netloss = wght_mean) %>% 
+  replace_na(list(croplands_2019 = 0, croplands_2019_netgain = 0, croplands_2019_netloss = 0))
 
-save(croplands, file = here('data', 'croplands.RData'))
+
+## SPAM DATASET
+spam_2017_ner <- read_excel(here("data_raw", "spam_2017_ner.xlsx"))
+
+crop_production_by_cell <- spam_2017_ner |> 
+  group_by(cell5m, x, y) |> 
+  summarize(
+    crop_diversity = simpson(ends_with("_a")),
+    crop_production_total = sum(across(ends_with("_a"))),
+    crop_production_pmil = sum(pmil_a),
+    crop_production_sorg = sum(sorg_a),
+    crop_production_cowp = sum(cowp_a),
+    crop_production_vege = sum(vege_a)
+  ) |> 
+  ungroup()
+
+crop_production_sf = st_as_sf(crop_production_by_cell, 
+                              coords = c("x", "y"),
+                              crs = 4326,
+                              agr = "aggregate") |> 
+  rowid_to_column()
+
+# tm_shape(crop_production_sf) +
+#  tm_symbols(col = "crop_production_pmil", size = .1, border.alpha = 0) +
+#  tm_shape(grappe_buffer) +
+#  tm_polygons(alpha = 0)
+
+crop_production_by_grappe <- st_intersection(crop_production_sf, grappe_buffer) |> 
+  mutate(int_name = paste0(rowid, "-", grappe))
+
+# tm_shape(crop_production_by_grappe) +
+#  tm_symbols(col = "crop_production_pmil", size = .1, border.alpha = 0) +
+#  tm_shape(grappe_buffer) +
+#  tm_polygons(alpha = 0)
+
+crop_production <- crop_production_by_grappe |> 
+  group_by(grappe) |> 
+  summarize(crop_production_diversity = mean(crop_diversity),
+            crop_production_total = mean(crop_production_total),
+            crop_production_pmil = mean(crop_production_pmil),
+            crop_production_sorg = mean(crop_production_sorg),
+            crop_production_cowp = mean(crop_production_cowp),
+            crop_production_vege = mean(crop_production_vege)
+  ) |> 
+  st_drop_geometry()
+
+# save data
+save(croplands, spam_2017_ner, crop_production_sf, crop_production_by_grappe, crop_production, 
+     file = here('data', 'cropland_production.RData'))
 
 ################################################################################
 

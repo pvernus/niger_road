@@ -332,47 +332,48 @@ var_label(wt_cluster_data) <- list(
 
 ```{r cluster_data}
 
-cluster_survey_data <- merged_data |> 
-  mutate(across(c(h_literacy), \(x) as.numeric(levels(x)[x]))) |> 
-  group_by(grappe) |> 
-  summarize(
-    sh_food_cons = mean(sh_fcons, na.rm = TRUE), # food consumption
-    food_cons_pc = mean(fcons_pc, na.rm = TRUE),
-    hh_cultivated_area = mean(hh_total_superf, na.rm = TRUE),
-    empl_food_agriculture = sum(fte_agriculture)/sum(fte_total), # food empl
-    empl_food_processing = sum(fte_processing)/sum(fte_total),
-    empl_food_marketing = sum(fte_marketing)/sum(fte_total),
-    empl_food_away_home = sum(fte_away_home)/sum(fte_total),
-    hH_literacy = sum(h_literacy) / length(h_literacy), # head of HH charastest.
-    hH_female = sum(h_gender) / length(h_gender),
-    hH_unemploy = sum(h_unemploy) / length(h_unemploy)
+load(here('data', 'production.RData'))
+load(here('data', 'consumption.RData'))
+
+cluster_data <- merge(consumption %>% st_drop_geometry(), 
+                      production %>% st_drop_geometry(), 
+                      by = 'grappe')
+
+cluster_data <- cluster_data %>% 
+  rename(
+    `Local market relative prices` = price_diff_mean,
+    `Distance to closest marketplace` = distance_marketplace,
+    `Livestock per HH (TLU)` = livestock_tlu_avg,
+    `Poverty incidence` = pov,
+    `Frequency of violent events` = freq_vio_events,
+    `Landless only HH` = landless_only,
+    `Landless Pastoralist HH`= landless_pastoral,
+    `Car ownership` = car,
+    `Unhealthy diet in the last 12 months` = healthy_diet,
+    `Distance to closest school` = distance_school,
+    `Fridge ownership` = fridge,
+    `Waster disposal` = waste,
+    `Net loss of croplands, 2000-2019`,
+    `Water depletion` = water_depletion,
+    `Mean Precipitation` = total_precipitation,
+    `Mean Temperature` = mean_temp,
+    `Food agriculture employment` = empl_food_agriculture,
+    `Food processing employment` = empl_food_processing,
+    `Food marketing employment` = empl_food_marketing,
+    `Food-away-from-home employment` = empl_food_away_home,
+    `Crop production` = crop_production_total
   )
 
-cluster_data <- cluster_survey_data |> 
-  left_join(crop_production, by = "grappe") |> 
-  left_join(cropland |> select(grappe, cropland, cropland_loss_0319), by = "grappe") |> 
-  mutate_all(\(x) if_else(is.na(x), 0, x)) |> 
-  select(-crop_production_diversity)
-  
 ```
 
 ```{r labels}
 # Add labels to new variables
 var_label(cluster_data) <- list(
-  grappe = "Grappe/Communauté",
-  sh_food_cons = "Average share of food consumption in households' total expenditures",
-  food_cons_pc = "Average percentile rank at the country-level of households' food consumption per capita",
-  hh_cultivated_area = "Average percentile rank at the country-level of households' cultivated area",
-  empl_food_agriculture = "Avarage share of food agriculture jobs in food employment at the ADM-2 level",
-  empl_food_processing = "Avarage share of food processing jobs in food employment at the ADM-2 level",
-  empl_food_marketing = "Avarage share of food marketing jobs in food employment at the ADM-2 level",
-  empl_food_away_home = "Avarage share of food away-from-home jobs in food employment at the ADM-2 level",
-  hH_female = "Average share of femmale-led households",
-  hH_literacy = "Average share of household heads who knows how to read",
-  hH_unemploy = "Average share of household heads who are unemployed"
+  grappe = "Enumeration Areas",
 )
 
 save(cluster_data, file = here('data','cluster_data.RData'))
+
 ```
 
 # Vulnerability profiles
@@ -429,21 +430,40 @@ heatmap(score_matrix, scale = "none")
 dev.off()
 ```
 
-```{r indicators_balancing}
+```{r indicator_balancing}
 
-cluster_b <- column_to_rownames(cluster_data, var = "grappe") %>% 
-  select(-c(crop_production_cowp, crop_production_sorg, crop_production_total))
-cluster_norm_b <- as.data.frame(scale(cluster_b))
+indicator_balancing <- column_to_rownames(cluster_data, var = "grappe") %>% 
+  select(-c(croplands_2019_netgain, # potential
+            livestock_tlu_total, livestock_tlu_median, # availability
+            livestock_large_pct, feed_prod_kcal, 
+            food_prod_kcal, feed_prod_kcal, crop_production_diversity,
+            fatalities, distance_main_road, price_diff_median, auto_conso, # access
+            price_change_season_mean, price_change_season_median,
+            cropping_only, cropping_pastoral,
+            varied_diet, cooking_stove # utilization
+))
 
-corr_matrix_b <- cor(scale(cluster_b))
+cluster_norm_balanced <- as.data.frame(scale(indicator_balancing))
+
+corr_matrix_balanced <- cor(scale(cluster_norm_balanced))
 # score_matrix_b <- score_matrix(cluster_norm_b)
 ```
+
+| Potential              | Availability             | Access               | Utilization     |
+|------------------------|--------------------------|----------------------|-----------------|
+| croplands_2019_netloss | crop_production_total    | distance_marketplace | healthy_diet    |
+| water_depletion        | livestock_tlu_avg        | car                  | distance_school |
+| total_precipitation    | prod_stock               | pov                  | fridge          |
+| mean_temp              | empl_food_agriculture    | price_diff_mean      | waste           |
+|                        | empl_food_processing     | landless_only        |                 |
+|                        | empl_food_marketing      | landless_pastoral    |                 |
+|                        | empl_food_food_away_home | freq_vio_events      |                 |
 
 ## PCA
 
 ```{r pca_norm}
 
-data_pca <- princomp(cluster_norm_b)
+data_pca <- princomp(cluster_norm_balanced)
 summary(data_pca)
 data_scores <- data_pca$scores[, 1:5]
 
@@ -454,9 +474,9 @@ data_scores <- data_pca$scores[, 1:5]
 get_eig(data_pca)
 fviz_eig(data_pca)
 
-res.pca <- PCA(cluster_norm, graph = FALSE)
+res.pca <- PCA(cluster_norm_balanced, graph = FALSE)
 summary(res.pca)
-res.scores <- res.pca$ind$coord[, 1:5]
+res.scores <- res.pca$ind$coord
 # Kaizer criterion: keep eigenvalue PC > 1
 # res.pca$eig[,1]^2
 
@@ -469,35 +489,6 @@ fviz_pca_var(data_pca, col.var = "cos2",
              gradient.cols = c("grey", "orange", "red"),
              repel = TRUE)
 
-```
-
-```{r pca_score}
-
-data_pca <- princomp(cluster_norm)
-summary(data_pca)
-data_scores <- data_pca$scores[, 1:5]
-# Kaizer criterion: keep eigenvalue PC > 1
-data_pca$sdev ^ 2
-# loadings of each principal component
-data_pca$loadings[, 1:5]
-
-res.pca <- PCA(cluster_norm, graph = FALSE)
-summary(res.pca)
-res.scores <- res.pca$ind$coord[, 1:5]
-# Kaizer criterion: keep eigenvalue PC > 1
-res.pca$eig[,1]^2
-
-# scree plot
-fviz_eig(data_pca, addlabels = TRUE)
-
-# biplot of the attributes
-fviz_pca_var(data_pca, col.var = "black")
-# contribution of each variable (cos2 = quality of representation)
-fviz_cos2(data_pca, choice = "var", axes = 1:2)
-# biplot combined with cos2
-fviz_pca_var(data_pca, col.var = "cos2",
-             gradient.cols = c("grey", "orange", "red"),
-             repel = TRUE)
 ```
 
 ```{r png_eig}
@@ -556,9 +547,29 @@ cor(data_dist, tree_coph)
 
 # https://statsandr.com/blog/clustering-analysis-k-means-and-hierarchical-clustering-by-hand-and-in-r/#optimal-number-of-clusters
 
+# load required packages
+library(factoextra)
+library(NbClust)
+
+res <- NbClust(data_scores, distance = "euclidean", min.nc=2, max.nc=6,
+        method = "ward.D2", index = "all")
+res <- NbClust(data_scores, distance = "euclidean", min.nc=2, max.nc=6,
+        method = "ward.D", index = "all")
+res <- NbClust(data_scores, distance = "euclidean", min.nc=2, max.nc=6,
+        method = "kmeans", index = "all")
+
 # Cut dataframe by cluster
-cluster <- cutree(data_tree, k = 3)
-cluster_tree <- data.frame(cluster, cluster_norm)
+cluster_2 <- cutree(data_tree, k = 2)
+cluster_tree_2 <- data.frame(cluster_2, cluster_norm_balanced)
+
+cluster_3 <- cutree(data_tree, k = 3)
+cluster_tree_3 <- data.frame(cluster_3, cluster_norm_balanced)
+
+cluster_4 <- cutree(data_tree, k = 4)
+cluster_tree_4 <- data.frame(cluster_4, cluster_norm_balanced)
+
+cluster_5 <- cutree(data_tree, k = 5)
+cluster_tree_5 <- data.frame(cluster_5, cluster_norm_balanced)
 
 # rownames(cluster_norm)[cluster == 1]
 
@@ -566,17 +577,21 @@ cluster_tree <- data.frame(cluster, cluster_norm)
 
 ```{r png_hclust}
 
-palette_profiles <- c("#FFC000", "#FA4926", "#00CC66")
+palette_profiles_2 <- c("#FFC000", "#FA4926", "#00CC66")
+palette_profiles_3 <- c("#FFC000", "#FA4926", "#00CC66")
+palette_profiles_4 <- c("#FFC000", "#FA4926", "#00CC66", "blue")
+palette_profiles_5 <- c("#FFC000", "#FA4926", "#00CC66", "blue", "purple")
+
 
 # Clusters = 3
 png(file=here('outputs', 'hclust_3.png'),
 width=700, height=500)
 # graph visualization
 require("igraph")
-fviz_dend(data_tree, k = 3, # cut in four groups (3, 6, 7)
+fviz_dend(data_tree, k = 3,
      cex = .5, # label size
      rect = TRUE,
-     k_colors = palette
+     k_colors = palette_profiles
 )
 dev.off()
 
@@ -626,19 +641,21 @@ dev.off()
 ```{r contributation_indicators}
 
 # estimate mean of all variables
-mean_total <- bind_rows(map(cluster_norm_b, mean)) |> 
+mean_total <- bind_rows(map(cluster_norm_balanced, mean)) |> 
   pivot_longer(everything()) |> 
   mutate(
     dimension = fct_relevel(as_factor(case_when(
-      name %in% c('cropland', 'cropland_loss_0319') ~ 'Potential',
-      name %in% c('hh_cultivated_area', 'empl_food_agriculture', 'empl_food_processing', 'crop_production_diversity', 'crop_production_pmil', 'crop_production_vege', 'cropland', 'cropland_loss_0319') ~ 'Availability',
-      name %in% c('sh_food_cons', 'food_cons_pc', 'empl_food_marketing', 'empl_food_away_home', 'hH_unemploy') ~ 'Access',
-      name %in% c('hH_literacy', 'hH_female') ~ 'Utilization'
-  )), "Potential", "Availability", "Access", "Utilization")
+      name %in% c('croplands_2019_netloss', 'water_depletion', 'total_precipitation', 'mean_temp') ~ 'Potential',
+      name %in% c('prod_stock', 'empl_food_agriculture', 'empl_food_processing', 'empl_food_marketing', 'empl_food_away_home', 'livestock_tlu_avg', 'crop_production_total') ~ 'Availability',
+      name %in% c('price_diff_mean', 'distance_marketplace', 'pov', 'freq_vio_events', 'landless_only', 'landless_pastoral', 'car') ~ 'Access',
+      name %in% c('healthy_diet', 'distance_school', 'fridge', 'waste') ~ 'Utilization'
+  )), "Potential", "Availability", "Access", "Utilization"),
+  category = if_else(dimension %in% c("Potential", "Availability"), "Production", "Consumption")
   )
 
 # estimate mean for each cluster
-mean_cluster <- cluster_tree |> 
+mean_cluster <- cluster_tree_5 |> 
+  rename(cluster = cluster_5) %>% 
   group_by(cluster) |> 
   summarize(across(where(is.numeric), ~ mean(.x, na.rm = TRUE))) %>% 
   mutate(cluster = as.factor(cluster))
@@ -652,6 +669,22 @@ mean_cluster_list <- lapply(mean_cluster_list, function(df) merge(df, mean_total
 mean_cluster_list <- lapply(mean_cluster_list, function(df) mutate(df, diff = value.cluster - value.total))
 
 palette_dim <- c('#005DB9', '#C4EAFF', '#7030A0', '#EFE5F7')
+palette_cat <- c('#005DB9', '#7030A0')
+
+mean_cluster_5 <- rbindlist(mean_cluster_list) %>% 
+    mutate(name = reorder_within(name, diff, cluster))
+
+ggplot(mean_cluster_5) +
+    geom_bar(aes(x =name, y = diff, fill = dimension), 
+             stat = "identity") +
+    coord_flip() +
+    scale_fill_manual(values = c('#C4EAFF', '#005DB9', '#7030A0', '#EFE5F7')) +
+    labs(x = "Factor", y = "Deviation from average profile") +
+    scale_x_reordered() +
+    theme_minimal() +
+    facet_wrap(~cluster, scales = "free")
+    
+
 
 # deviation from average for all variables for each cluster
 lapply(mean_cluster_list, function(df)
@@ -659,7 +692,7 @@ lapply(mean_cluster_list, function(df)
     geom_bar(aes(x = reorder(name, diff), y = diff, fill = dimension), 
              stat = "identity") +
     coord_flip() +
-    scale_fill_manual(values = c('#005DB9', '#C4EAFF', '#7030A0', '#EFE5F7')) +
+    scale_fill_manual(values = c('#C4EAFF', '#005DB9', '#7030A0', '#EFE5F7')) +
     labs(x = "Factor", y = "Deviation from average profile") +
     theme_minimal()
   )
@@ -671,7 +704,6 @@ lapply(mean_cluster_list, function(df)
 # estimate mean of all variables
 mean_total <- bind_rows(map(cluster_b |> column_to_rownames(var = ), summary)) |> 
   pivot_longer(everything())
-
 
 mean_total <- cluster_b |> 
   map(~summary(.x)) %>%  # compute summary of each var
@@ -704,27 +736,87 @@ mean_cluster |>
 
 ```{r spatial_distribution}
 
-grappe_cluster <- cluster_tree |> 
+## TWO Clusters
+cluster_2 <- cluster_tree_2 |> 
+  rename(cluster = cluster_2) %>% 
   rownames_to_column(var = "grappe") |> 
   select(grappe, cluster) |> 
   mutate(`Food security profile` = case_when(
-    cluster == 1 ~ 'Subsistence farming (Low Production)',
-    cluster == 2 ~ 'Urban areas (High Access, Low Availability)',
-    cluster == 3 ~ 'Food basket (High Production, Low Consumption)'
+    cluster == 1 ~ 'Cluster 1',
+    cluster == 2 ~ 'Cluster 2'
   ))
 
 # Merge with grappe_sf
-grappe_cluster_sf <- grappe_cluster |> 
+grappe_cluster_2 <- cluster_2 |> 
   merge(grappe_sf, by = "grappe") |> 
   st_as_sf()
 
+st_write(grappe_cluster_sf, here('data', 'grappe_cluster_2.shp'))
+
+## THREE Clusters
+cluster_3 <- cluster_tree_3 |> 
+  rename(cluster = cluster_3) %>% 
+  rownames_to_column(var = "grappe") |> 
+  select(grappe, cluster) |> 
+  mutate(`Food security profile` = case_when(
+    cluster == 1 ~ 'Cluster 1',
+    cluster == 2 ~ 'Cluster 2',
+    cluster == 3 ~ 'Cluster 3'
+  ))
+
+grappe_cluster_3 <- cluster_3 |> 
+  merge(grappe_sf, by = "grappe") |> 
+  st_as_sf()
+
+st_write(grappe_cluster_sf, here('data', 'grappe_cluster_3.shp'))
+
+## FOUR Clusters
+cluster_4 <- cluster_tree_4 |> 
+  rename(cluster = cluster_4) %>% 
+  rownames_to_column(var = "grappe") |> 
+  select(grappe, cluster) |> 
+  mutate(`Food security profile` = case_when(
+    cluster == 1 ~ 'Cluster 1',
+    cluster == 2 ~ 'Cluster 2',
+    cluster == 3 ~ 'Cluster 3',
+    cluster == 4 ~ 'Cluster 4'
+  ))
+
+grappe_cluster_4 <- cluster_4 |> 
+  merge(grappe_sf, by = "grappe") |> 
+  st_as_sf()
+
+st_write(grappe_cluster_4, here('data', 'grappe_cluster_4.shp'))
+
+## FIVE Clusters
+cluster_5 <- cluster_tree_5 |> 
+  rename(cluster = cluster_5) %>% 
+  rownames_to_column(var = "grappe") |> 
+  select(grappe, cluster) |> 
+  mutate(`Food security profile` = case_when(
+    cluster == 1 ~ 'Cluster 1',
+    cluster == 2 ~ 'Cluster 2',
+    cluster == 3 ~ 'Cluster 3',
+    cluster == 4 ~ 'Cluster 4',
+    cluster == 5 ~ 'Cluster 5'
+  ))
+
+grappe_cluster_5 <- cluster_5 |> 
+  merge(grappe_sf, by = "grappe") |> 
+  st_as_sf()
+
+st_write(grappe_cluster_5, here('data', 'grappe_cluster_5.shp'))
+
+
 # Map cluster points
+tmap_mode("view")
 tm_shape(adm03) +
   tm_polygons(alpha = 0) +
   tm_shape(grappe_cluster_sf) +
   tm_symbols(col = "Food security profile", 
              alpha = .6,
-             palette = palette_profiles) +
+             palette = palette_profiles_5,
+             size = .3) +
   tm_layout(legend.width = 6,
             legend.height = 4)
 
@@ -828,6 +920,20 @@ tm_shape(adm03) +
             legend.height = 4)
 dev.off()
 
+# Cluster 5
+png(file=here('outputs', 'map_cluster_5.png'),
+width=700, height=500)
+tm_shape(adm03) +
+  tm_polygons(alpha = 0) +
+  tm_shape(grappe_cluster_sf) +
+  tm_symbols(col = "Food security profile", 
+             alpha = .6,
+             palette = palette_profiles_5,
+             size = .5) +
+  tm_layout(legend.width = 6,
+            legend.height = 4)
+dev.off()
+
 
     cluster == 1 ~ 'Subsistence farming (Low Production)',
     cluster == 2 ~ 'Urban areas (High Access, Low Availability)',
@@ -862,6 +968,44 @@ dev.off()
 ```
 
 Density is used as an illustrative variable \[include it in the mapping?\]
+
+```{r}
+load(here('data', 'short_survey.RData'))
+
+grappe_cluster_group <- left_join(cluster_2 %>% select(-`Food security profile`) %>% rename(cluster_2 = cluster),
+          cluster_3 %>% select(-`Food security profile`) %>% rename(cluster_3 = cluster),
+          by = 'grappe') %>% 
+  left_join(cluster_4 %>% select(-`Food security profile`) %>% rename(cluster_4 = cluster),
+          by = 'grappe') %>% 
+  left_join(cluster_5 %>% select(-`Food security profile`) %>% rename(cluster_5 = cluster),
+          by = 'grappe')
+
+
+survey_cluster <- survey_welfare %>% 
+  select(hhid, grappe, region, milieu, hhweight) %>% 
+  mutate(grappe = as_factor(grappe)) %>% 
+  left_join(grappe_cluster_group %>% mutate(grappe = as_factor(grappe)), by = 'grappe') %>% 
+  as_survey_design(ids = c(grappe,hhid), 
+                   strata = c(region, milieu), 
+                   weights = hhweight,
+                   nest = TRUE)
+
+survey_cluster %>% 
+  group_by(cluster_2) %>% 
+  summarize(pct = survey_prop())
+  
+survey_cluster %>% 
+  group_by(cluster_3) %>% 
+  summarize(pct = survey_prop())
+
+survey_cluster %>% 
+  group_by(cluster_4) %>% 
+  summarize(pct = survey_prop())
+
+survey_cluster %>% 
+  group_by(cluster_5) %>% 
+  summarize(pct = survey_prop())
+```
 
 # GIS / spatial analysis
 

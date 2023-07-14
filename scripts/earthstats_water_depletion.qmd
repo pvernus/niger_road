@@ -30,6 +30,11 @@ water_depletion_by_grappe <- water_depletion %>%
   group_by(id) %>% 
     summarize(water_depletion = sum(value * coverage_fraction) / sum(coverage_fraction))
 
-save(water_depletion_by_grappe, file = here('data', 'water_depletion.RData'))
+# merge 
+water_depletion <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(water_depletion_by_grappe, by = "id")
+
+save(water_depletion, file = here('data', 'water_depletion.RData'))
   
 ```

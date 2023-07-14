@@ -54,27 +54,30 @@ food_prices_avg_year_deviation <- food_prices %>%
   filter(pricetype == 'Retail' & commodity %in% c('Maize', 'Millet', 'Sorghum')) %>%
   group_by(month = floor_date(date, "month"), commodity) %>% 
   mutate(mean_month = mean(price), # mean price by month for each commodity
-         dev_mean_month = 100 * (price - mean_month) / mean_month,
-         median_month = median(price),
-         dev_median_month = 100 * (price - median_month) / median_month
+         dev_mean_month = 100 * (price - mean_month) / mean_month, # variation rate
+         median_month = median(price), # median price by month for each commodity
+         dev_median_month = 100 * (price - median_month) / median_month # variation rate
          ) %>% 
   ungroup()
 
 price_avg_year_deviation <- food_prices_avg_year_deviation %>% 
-  summarize(dev_mean_month = median(dev_mean_month, na.rm = TRUE), 
-            dev_median_month = median(dev_median_month, na.rm = TRUE),
+  summarize(price_diff_mean = mean(dev_mean_month, na.rm = TRUE), 
+            price_diff_median = median(dev_median_month, na.rm = TRUE),
             .by = market)
 ```
 
 ```{r var_avg_year}
-
-# Standard deviation of prices 
-
+# NOT USED
+# Annual variability (standard deviation) of prices by commodity on each market
 food_prices_year_variability <- food_prices %>% 
   filter(pricetype == 'Retail') %>%
-  mutate(month = floor_date(date, "month")) %>% 
+  mutate(month = floor_date(date, "month")) %>%  
   group_by(market, commodity, year) %>% 
-  summarize(annual_variability = sd(price))
+  summarize(annual_variability = sd(price)) %>% 
+  ungroup() %>% 
+  group_by(market, commodity) %>% 
+  summarize(price_variability_mean = mean(annual_variability, na.rm = TRUE),
+            price_variability_median = median(annual_variability, na.rm = TRUE))
 
 # Total
 food_prices_year_variability_total <- food_prices %>%
@@ -244,6 +247,12 @@ conso_imp_rice <- conso_agg %>%
   group_by(hhid) %>% 
   slice(which.max(sh_imp_rice))
 
+left_join(conso_imp_rice, survey_welfare %>% 
+            select(hhid, id_adm1, id_adm2), by = "hhid") %>% 
+  ggplot(aes(x = sh_imp_rice)) + 
+  geom_density() + 
+  facet_wrap(~id_adm1)
+
 ```
 
 ```{r price_imported_rice}
@@ -263,10 +272,21 @@ price_imported_rice %>%
             var_mean_month = mean(var_mean_month, na.rm = TRUE), 
             .by = market)
 
+price_imported_rice %>% 
+  summarize(var_median_month = median(var_median_month, na.rm = TRUE), 
+            var_mean_month = mean(var_mean_month, na.rm = TRUE), 
+            .by = market)
+
 food_prices %>% 
   filter(commodity %in% c('Rice (imported)', 'Rice (local)') & pricetype == 'Retail') %>% 
   ggplot(aes(x = date, y = price)) +
   geom_line(aes(col = commodity)) +
+  facet_wrap(~market)
+
+food_prices %>% 
+  filter(commodity %in% c('Rice (imported)', 'Rice (local)') & pricetype == 'Retail') %>% 
+  ggplot(aes(x = season, y = price)) +
+  geom_boxplot(aes(col = commodity))
   facet_wrap(~market)
 ```
 
@@ -280,15 +300,17 @@ seasonality_year <- food_prices %>%
   summarize(price = mean(price)) %>% 
   ungroup() %>% 
   pivot_wider(names_from = season, values_from = price) %>% 
-  mutate(price_change_season = round(100 * (wet - dry) / dry, 2)) # variation rate
+  mutate(price_diff_seasonality = round(100 * (wet - dry) / dry, 2)) # variation rate between dry and wet seasons
 
 seasonality <- seasonality_year %>% 
-  summarize(price_change_season = median(price_change_season, na.rm = TRUE), .by = market)
+  summarize(price_change_season_mean = mean(price_diff_seasonality, na.rm = TRUE),
+            price_change_season_median = median(price_diff_seasonality, na.rm = TRUE),
+            .by = market)
 
 ggplot(seasonality_year, aes(x = commodity, y = price_change_season)) +
   geom_boxplot(aes(col = commodity)) +
   geom_hline(yintercept=0, linetype="dashed", 
-                color = "red", size=1) +
+                color = "red", linewidth=.5) +
   facet_wrap(~year) +
   theme_minimal()
 
@@ -296,8 +318,19 @@ ggplot(seasonality_year, aes(x = commodity, y = price_change_season)) +
 
 ```{r}
 
-# nngeo::st_nn(grappe_sf, price_market_sf, k = 2)
-st_join(grappe_sf, price_market_sf, join = nngeo::st_nn, k = 1, progress = FALSE) # k = 2 for less sensitivity?
+# Join price_market_sf with price_avg_year_deviation and seasonality
+price_diff_market_sf <- left_join(price_market_sf, price_avg_year_deviation, 
+                                  by = 'market') %>% 
+  left_join(seasonality, by = 'market')
 
+# Join price_market_sf and grappe_sf
+load(here('data', 'grappe_gps.RData'))
+
+price_market_by_grappe <- st_join(grappe_sf, 
+                                    price_diff_market_sf, 
+                                    join = nngeo::st_nn, k = 1, progress = FALSE)
+# nngeo::st_nn(grappe_sf, price_market_sf, k = 2) k = 2 for less sensitivity?
+
+save(price_market_by_grappe, file = here('data', 'price_market.RData'))
 
 ```
