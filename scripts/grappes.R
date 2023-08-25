@@ -29,6 +29,7 @@ tm_shape(grappe_buffer) +
 save(grappe_sf, grappe_buffer, 
      file = "data/grappes.RData")
 
+st_write(grappe_sf, here('data', 'grappes.gpkg'), delete_layer = TRUE)
 
 
 # map 

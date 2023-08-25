@@ -48,7 +48,7 @@ freq_vio_events_by_grappe <- ner_acled_grappes %>%
   st_drop_geometry() %>% 
   summarize(fatalities = sum(fatalities), 
             freq_vio_events = length(event_id_cnty),
-            .by = "grappes") %>% 
+            .by = "grappe") %>% 
   arrange(desc(freq_vio_events))
 
 save(freq_vio_events_by_grappe, file = here('data', 'freq_vio_events.RData'))

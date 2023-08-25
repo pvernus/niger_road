@@ -2,7 +2,6 @@ install.packages('installr')
 # installr()
 # install.RStudio()
 
-if (!require("qgisprocess")) remotes::install_github("paleolimbot/qgisprocess")
 if (!require("dggridR")) devtools::install_github("r-barnes/dggridR", vignette=TRUE)
 if (!require("rhdx")) remotes::install_github("dickoa/rhdx")
 
@@ -33,21 +32,19 @@ pacman::p_load(
   datawizard,
   ggbeeswarm,
   tidytext,
-# network data
-  tidygraph,
-  igraph,
+  tidygraph, # network data
+  igraph, # network data
   shp2graph, # switch between sp and igraph objects
-  rgrass7, # ‘bridge’ to GRASS GIS
-  link2GI, # ‘bridge’ to GRASS GIS
   dbscan,
   spNetwork,
   sfnetworks,
+  dodgr,
+  geodist,
   dbscan,
   netrankr,
-# Humdata
-  rhdx,
-# spatial
+  rhdx, # Humdata
   osmdata, # import data from OpenStreetMap
+  qgisprocess,
   terra, # handle raster data
   tidyterra,
   raster, # handle raster data
@@ -83,6 +80,7 @@ pacman::p_load(
   ggcorrplot,
   FactoMineR,
   factoextra,
+  PCAtest,
   GGally,
   ggforce,
   PerformanceAnalytics,

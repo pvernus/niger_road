@@ -138,11 +138,23 @@ st_write(nodes_ner, here('data', 'nodes_ner.shp'), append = TRUE)
 # st_read("data/nodes_ner.shp")
 
 
+# Add max speed
+ner_mainroad_network <- st_read(here('data', 'ner_mainroad.shp')) %>% 
+  select(osm_id, osm_type, highway) %>% 
+  mutate(max_speed = case_when( # Add a speed variable
+    highway %in% c('trunk', 'primary_link', 'primary') ~ 100,
+    highway %in% c('secondary_link', 'secondary') ~ 80,
+    highway %in% c('tertiary_link', 'tertiary') ~ 20
+  ))
+
+st_write(ner_mainroad_network, here('data', 'ner_mainroad_maxspeed.shp'), append = TRUE)
+
 ## save raw data
 save(lines_ner,
      nodes_ner,
      ner_graph,
      graph,
+     ner_mainroad_network,
      file = "data/network.RData")
 
 

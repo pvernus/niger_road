@@ -1,0 +1,41 @@
+---
+title: "Land productivity dynamics"
+format: html
+editor: visual
+---
+
+```{r}
+
+load(here('data', 'grappe_gps.RData')) # grappe_buffer: buffers around EAs
+
+land_pty_dynamics <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'Land_productivity_dynamic.tif'))
+
+# https://www.scidb.cn/previewFile/onlinePreview?fileId=60af8f752438424c8791991a&idOrName=true
+land_pty_dynamics[land_pty_dynamics == 0] <- NA
+land_pty_dynamics[land_pty_dynamics == 11] <- 0
+land_pty_dynamics[land_pty_dynamics == 21] <- -25
+land_pty_dynamics[land_pty_dynamics == 22] <- -50
+land_pty_dynamics[land_pty_dynamics == 23] <- -75
+land_pty_dynamics[land_pty_dynamics == 24] <- -100
+land_pty_dynamics[land_pty_dynamics == 31] <- 25
+land_pty_dynamics[land_pty_dynamics == 32] <- 50
+land_pty_dynamics[land_pty_dynamics == 33] <- 75
+land_pty_dynamics[land_pty_dynamics == 34] <- 100
+land_pty_dynamics[land_pty_dynamics == 40] <- NA
+
+# terra::crs(total_precipitation)
+
+land_pty_dynamics_by_grappe <- land_pty_dynamics %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  group_by(id) %>% 
+    summarize(land_pty_dynamics = sum(value * coverage_fraction, na.rm = TRUE) / sum(coverage_fraction, na.rm = TRUE))
+
+# merge 
+land_pty_dynamics <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(land_pty_dynamics_by_grappe, by = "id")
+
+save(land_pty_dynamics, file = here('data', 'land_pty_dynamics.RData'))
+
+```

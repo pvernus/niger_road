@@ -339,31 +339,6 @@ cluster_data <- merge(consumption %>% st_drop_geometry(),
                       production %>% st_drop_geometry(), 
                       by = 'grappe')
 
-cluster_data <- cluster_data %>% 
-  rename(
-    `Local market relative prices` = price_diff_mean,
-    `Distance to closest marketplace` = distance_marketplace,
-    `Livestock per HH (TLU)` = livestock_tlu_avg,
-    `Poverty incidence` = pov,
-    `Frequency of violent events` = freq_vio_events,
-    `Landless only HH` = landless_only,
-    `Landless Pastoralist HH`= landless_pastoral,
-    `Car ownership` = car,
-    `Unhealthy diet in the last 12 months` = healthy_diet,
-    `Distance to closest school` = distance_school,
-    `Fridge ownership` = fridge,
-    `Waster disposal` = waste,
-    `Net loss of croplands, 2000-2019`,
-    `Water depletion` = water_depletion,
-    `Mean Precipitation` = total_precipitation,
-    `Mean Temperature` = mean_temp,
-    `Food agriculture employment` = empl_food_agriculture,
-    `Food processing employment` = empl_food_processing,
-    `Food marketing employment` = empl_food_marketing,
-    `Food-away-from-home employment` = empl_food_away_home,
-    `Crop production` = crop_production_total
-  )
-
 ```
 
 ```{r labels}
@@ -433,31 +408,26 @@ dev.off()
 ```{r indicator_balancing}
 
 indicator_balancing <- column_to_rownames(cluster_data, var = "grappe") %>% 
-  select(-c(croplands_2019_netgain, # potential
-            livestock_tlu_total, livestock_tlu_median, # availability
-            livestock_large_pct, feed_prod_kcal, 
-            food_prod_kcal, feed_prod_kcal, crop_production_diversity,
-            fatalities, distance_main_road, price_diff_median, auto_conso, # access
-            price_change_season_mean, price_change_season_median,
-            cropping_only, cropping_pastoral,
-            varied_diet, cooking_stove # utilization
-))
+  select(biodiversity_intactness, water_depletion, croplands_2019_netgain,
+        land_pty_dynamics, # potential
+        crop_production_pmil, crop_production_vege, livestock_tlu_avg, 
+        empl_food_agriculture, empl_food_processing, empl_food_marketing,
+        prod_stock, # availability
+        price_diff_mean, price_change_season_mean, pov, pastoral, landless,
+        distance_main_road, distance_marketplace, car, freq_vio_events, # access
+        varied_diet, cooking_stove, fridge, waste # utilization
+  )
 
 cluster_norm_balanced <- as.data.frame(scale(indicator_balancing))
 
-corr_matrix_balanced <- cor(scale(cluster_norm_balanced))
-# score_matrix_b <- score_matrix(cluster_norm_b)
-```
+# corr_matrix_balanced <- cor(scale(cluster_norm_balanced))
+# col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(256)
+# heatmap(corr_matrix_balanced, scale = "none", col =  rev(col))
 
-| Potential              | Availability             | Access               | Utilization     |
-|------------------------|--------------------------|----------------------|-----------------|
-| croplands_2019_netloss | crop_production_total    | distance_marketplace | healthy_diet    |
-| water_depletion        | livestock_tlu_avg        | car                  | distance_school |
-| total_precipitation    | prod_stock               | pov                  | fridge          |
-| mean_temp              | empl_food_agriculture    | price_diff_mean      | waste           |
-|                        | empl_food_processing     | landless_only        |                 |
-|                        | empl_food_marketing      | landless_pastoral    |                 |
-|                        | empl_food_food_away_home | freq_vio_events      |                 |
+# score_matrix_balanced <- score_matrix(cluster_norm_balanced)
+# heatmap(score_matrix_balanced, scale = "none", col =  rev(col))
+
+```
 
 ## PCA
 
@@ -591,7 +561,7 @@ require("igraph")
 fviz_dend(data_tree, k = 3,
      cex = .5, # label size
      rect = TRUE,
-     k_colors = palette_profiles
+     k_colors = "jco"
 )
 dev.off()
 
@@ -644,13 +614,16 @@ dev.off()
 mean_total <- bind_rows(map(cluster_norm_balanced, mean)) |> 
   pivot_longer(everything()) |> 
   mutate(
-    dimension = fct_relevel(as_factor(case_when(
-      name %in% c('croplands_2019_netloss', 'water_depletion', 'total_precipitation', 'mean_temp') ~ 'Potential',
-      name %in% c('prod_stock', 'empl_food_agriculture', 'empl_food_processing', 'empl_food_marketing', 'empl_food_away_home', 'livestock_tlu_avg', 'crop_production_total') ~ 'Availability',
-      name %in% c('price_diff_mean', 'distance_marketplace', 'pov', 'freq_vio_events', 'landless_only', 'landless_pastoral', 'car') ~ 'Access',
-      name %in% c('healthy_diet', 'distance_school', 'fridge', 'waste') ~ 'Utilization'
-  )), "Potential", "Availability", "Access", "Utilization"),
-  category = if_else(dimension %in% c("Potential", "Availability"), "Production", "Consumption")
+    dimension = fct_relevel(as_factor(
+        case_when(
+      name %in% c('biodiversity_intactness', 'water_depletion', 'croplands_2019_netgain', 'land_pty_dynamics') ~ 'Potentiel',
+      name %in% c('prod_stock', 'empl_food_agriculture', 'empl_food_processing', 'empl_food_marketing', 'livestock_tlu_avg', 'crop_production_pmil', 'crop_production_vege') ~ 'Disponibilité',
+      name %in% c('price_diff_mean', 'price_change_season_mean', 'distance_marketplace', 'distance_main_road', 'pov', 'freq_vio_events', 'landless', 'pastoral', 'car') ~ 'Accès',
+      name %in% c('varied_diet', 'fridge', 'waste', 'cooking_stove') ~ 'Utilisation'
+  )),
+  "Potentiel", "Disponibilité", "Accès", "Utilisation"),
+  category = if_else(dimension %in% c("Potentiel", "Disponibilité"), 
+                     "Production", "Consumption")
   )
 
 # estimate mean for each cluster
@@ -684,16 +657,41 @@ ggplot(mean_cluster_5) +
     theme_minimal() +
     facet_wrap(~cluster, scales = "free")
     
-
-
 # deviation from average for all variables for each cluster
 lapply(mean_cluster_list, function(df)
-  ggplot(df) +
+  df %>% 
+    mutate(name = case_when(
+      name == 'biodiversity_intactness' ~ 'Biodiversité',
+      name == 'water_depletion' ~ 'Appauvrissement en eau',
+      name == 'croplands_2019_netgain' ~ 'Gain net de terres cultivées 2000-2029',
+      name == 'land_pty_dynamics' ~ 'Dynamique de la productivité des sols',
+      name == 'prod_stock' ~ 'Production agricole stockée',
+      name == 'empl_food_agriculture' ~ 'Emploi agro-alimentaire - Production',
+      name == 'empl_food_processing' ~ 'Emploi agro-alimentaire - Transformation',
+      name == 'empl_food_marketing' ~ 'Emploi agro-alimentaire - Commercialisation',
+      name == 'livestock_tlu_avg' ~ 'Unités de bétail tropical (UBT)',
+      name == 'crop_production_pmil' ~ 'Production agricole - millet',
+      name == 'crop_production_vege' ~ 'Production agricole - légumes',
+      name == 'price_diff_mean' ~ 'Variation des prix locaux / moyenne nationale',
+      name == 'price_change_season_mean' ~ 'Variation saisonnière des prix locaux',
+      name == 'pov' ~ 'Pauvreté monétaire',
+      name == 'landless' ~ 'Population sans-terre',
+      name == 'pastoral' ~ 'Population pastorale',
+      name == 'distance_main_road' ~ 'Distance - Route principale',
+      name == 'distance_marketplace' ~  'Distance - Marché',
+      name == 'freq_vio_events' ~ 'Conflits violents',
+      name == 'car' ~ 'Voiture',
+      name == 'varied_diet' ~ 'Régime alimentaire varié',
+      name == 'fridge' ~ 'Frigidaire',
+      name == 'waste' ~ 'Egouts', 
+      name == 'cooking_stove' ~ 'Cuisinière',
+    )) %>% 
+  ggplot() +
     geom_bar(aes(x = reorder(name, diff), y = diff, fill = dimension), 
              stat = "identity") +
     coord_flip() +
     scale_fill_manual(values = c('#C4EAFF', '#005DB9', '#7030A0', '#EFE5F7')) +
-    labs(x = "Factor", y = "Deviation from average profile") +
+    labs(x = "Indicateurs", y = "Déviation du profil moyen") +
     theme_minimal()
   )
 
@@ -826,7 +824,7 @@ tm_shape(adm03) +
 suvery_cluster <- grappe_cluster %>%
   mutate(grappe = as.numeric(grappe)) %>% 
   left_join(survey_welfare %>% 
-              select(hhid, grappe, region, zae, hhweight, id_adm1, id_adm2), 
+              select(hhid, grappe, region, zae, hhweight, id_adm2), 
               by = "grappe")
 
 survey_design <- suvery_cluster %>% 

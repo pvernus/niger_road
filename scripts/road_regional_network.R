@@ -1,6 +1,13 @@
-regional_road_network <- st_read(here('data', 'regional_road', 'Roads_NER_NGA_CH.shp'))
+regional_road_network <- st_read(here('data', 'regional_road', 'road_reduced_reg.shp'))
+regional_road_lines <- st_cast(regional_road_network, "LINESTRING") %>% 
+  mutate(speed = case_when( # Add a speed variable
+  highway %in% c('trunk', 'primary_link', 'primary') ~ 100,
+  highway %in% c('secondary_link', 'secondary') ~ 80,
+  highway %in% c('tertiary_link', 'tertiary') ~ 20
+  ))
 
-regional_road_lines <- st_cast(regional_road_network, "LINESTRING")
+st_write(regional_road_lines, here('data', 'reg_mainroad_maxspeed.shp'), append = TRUE)
+
 
 # round the coordinates
 st_geometry(regional_road_lines) = st_geometry(regional_road_lines) %>%
@@ -54,6 +61,8 @@ contracted_sf <- contracted %>%
   activate("edges") %>% 
   st_as_sf() 
 
+save(contracted, contracted_sf, file = here('data', 'regional_road', 'contracted.RData'))
+
 graph_reg <- as_sfnetwork(contracted_sf, directed = FALSE, length_as_weight = TRUE)
 
 autoplot(graph_reg)
@@ -63,13 +72,11 @@ autoplot(graph_reg)
 
 sum(which_loop(graph_reg)) #should have no self-loop
 simplify_graph_reg <- igraph::simplify(graph_reg, remove.loops = TRUE, remove.multiple = FALSE)
-sum(which_loop(simplify_graph))
+sum(which_loop(simplify_graph_reg))
 
-graph_reg %>% 
+graph_reg_admpop <- graph_reg %>% 
   activate(edges) %>%
   st_join(reg_admpop_sf, largest = TRUE)
-  
-
 
 ## Centrality measures
 # source: https://igraph.org/r/doc/betweenness.html
@@ -96,21 +103,15 @@ lines_reg <- graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()
 st_write(lines_reg, "data/regional_road/lines_reg.shp", append = TRUE)
 # st_read("data/lines_reg.shp")
 
-lines_reg <- graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()
-st_write(lines_reg, "data/regional_road/lines_reg.shp", append = TRUE)
-
 nodes_reg <- graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf()
 st_write(nodes_reg, "data/regional_road/nodes_reg.shp", append = TRUE)
 # st_read("data/nodes_reg.shp")
 
-nodes_reg <- graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf()
-st_write(nodes_reg, "data/regional_road/nodes_reg.shp", append = TRUE)
 
 ## save raw data
-save(lines_reg,
-     nodes_reg,
-     graph,
-     graph_reg,
+save(contracted_sf,
+     simplify_graph_reg, graph_reg, graph, 
+     lines_reg, nodes_reg,
      file = "data/network_reg.RData")
 
 ## Map

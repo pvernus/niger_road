@@ -13,6 +13,8 @@ load(here('data', 'grappe_gps.RData'))
 
 ```{r potential}
 # Load data
+load(here('data', 'land_pty_dynamics.RData')) # land productivity dynamics
+load(here('data', 'biodiversity_intactness.RData')) # bidiversity intactness index
 load(here('data', 'cropland_production.RData')) # croplands vars
 load(here('data', 'water_depletion.RData')) # water depletion var
 load(here('data', 'total_precipitation.RData')) # total precipitation
@@ -21,6 +23,12 @@ load(here('data', 'mean_temp.RData')) # mean annual temperature
 # Merge with EAs/grappes
 potential <- croplands %>% 
   select(grappe, croplands_2019_netgain, croplands_2019_netloss) %>% 
+  left_join(land_pty_dynamics %>% st_drop_geometry() %>% 
+            select(grappe, land_pty_dynamics),
+            by = 'grappe') %>% 
+  left_join(biodiversity_intactness %>% st_drop_geometry() %>% 
+            select(grappe, biodiversity_intactness),
+            by = 'grappe') %>% 
   left_join(water_depletion %>% st_drop_geometry() %>%
               select(grappe, water_depletion),
             by = 'grappe') %>% 
@@ -48,18 +56,21 @@ availability <- auto_conso_by_grappe %>%
   left_join(stock_prod %>% select(grappe, prod_stock), by = "grappe") %>% 
   left_join(food_fte_by_grappe, by = "grappe") %>% 
   left_join(crop_production %>% 
-              select(grappe, crop_production_diversity, crop_production_total) %>%
-              st_drop_geometry(), 
+              select(grappe, crop_production_pmil, crop_production_vege) %>%
+              st_drop_geometry(),
             by = "grappe") %>% 
-  replace_na(list(crop_production_diversity = 0, crop_production_total = 0)) %>% 
+  replace_na(list(crop_production_pmil = 0, 
+                  crop_production_vege = 0)) %>% 
   left_join(food_prod_kcal %>% 
               select(grappe, food_prod_kcal) %>% 
               st_drop_geometry(),
             by = "grappe") %>% 
+  replace_na(list(food_prod_kcal = 0)) %>% 
   left_join(feed_prod_kcal %>% 
               select(grappe, feed_prod_kcal) %>% 
               st_drop_geometry(),
-            by = "grappe")
+            by = "grappe") %>% 
+  replace_na(list(feed_prod_kcal = 0))
   
 ```
 

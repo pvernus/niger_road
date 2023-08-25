@@ -14,7 +14,7 @@ load(here('data', 'grappe_gps.RData'))
 ```{r access}
 
 load(here('data', 'price_market.RData')) # food prices at local markets
-load(here('data', 'road_distance.RData')) # road distance to closest market, main road, and school
+load(here('data', 'distance_to_facility.RData')) # road distance to closest market, main road, and school
 load(here('data', 'livestock.RData')) # livestock assets (tropical livestock unit)
 load(here('data', 'poverty.RData')) # share of households under the national poverty line
 load(here('data', 'freq_vio_events.RData')) # frequency of violent events
@@ -24,10 +24,9 @@ load(here('data', 'asset.RData')) # car
 access <- left_join(price_market_by_grappe %>% 
             select(grappe, price_diff_mean, price_diff_median, 
                    price_change_season_mean, price_change_season_median),
-          distance_main_road_by_grappe,
+          distance_to_facility %>% select(-dist_to_school),
           by = 'grappe'
           ) %>% 
-  left_join(distance_market_by_grappe, by = 'grappe') %>% 
   left_join(livestock_by_grappe, by = 'grappe') %>% 
   left_join(poverty_by_grappe, by = 'grappe') %>% 
   left_join(freq_vio_events_by_grappe, by = 'grappe') %>%
@@ -45,7 +44,8 @@ load(here('data', 'diet.RData')) # healthy and varied diet
 load(here('data', 'asset.RData')) # fridge, cooking stove, waste system
 load(here('data', 'road_distance.RData')) # road distance to closest market, main road, and school
 
-utilization <- left_join(diet_by_grappe, distance_school_by_grappe, by = 'grappe') %>% 
+utilization <- left_join(diet_by_grappe, distance_to_facility %>% 
+                           select(grappe, dist_to_school), by = 'grappe') %>% 
     left_join(asset_by_grappe %>% select(grappe, fridge, cooking_stove, waste), by = 'grappe')
 
 ```

@@ -1,0 +1,307 @@
+---
+title: "CLUSTER ANALYSIS"
+format: html
+editor: visual
+---
+
+```{r load-packages}
+
+source(here::here('scripts', 'library.R'))
+```
+
+# Indicator selection
+
+```{r cluster_data}
+# load all variables that could be used as food security indicators
+load(here('data', 'production.RData'))
+load(here('data', 'consumption.RData'))
+
+# create a dataframe w/ all indicators
+cluster_data <- merge(consumption %>% st_drop_geometry(), 
+                      production %>% st_drop_geometry(), 
+                      by = 'grappe') %>% 
+  column_to_rownames(var = "grappe") 
+
+```
+
+```{r corr_matrix}
+# normalize data
+cluster_scaled <- scale(cluster_data) |> 
+  as.data.frame()
+
+# correlation matrix
+corr_matrix <- cor(cluster_scaled)
+score_matrix <- score_matrix(cluster_scaled) # check non-linear relationships
+
+# viz
+heatmap(score_matrix, scale = "none")
+
+col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(256)
+heatmap(corr_matrix, scale = "none", col =  rev(col))
+
+```
+
+```{r indicator_balancing}
+# reduce number of variables to avoid collinearity
+cluster_balanced <- cluster_data %>% 
+    select(biodiversity_intactness, water_depletion, croplands_2019_netgain,
+        land_pty_dynamics, # potential
+        crop_production_pmil, crop_production_vege, livestock_tlu_avg, 
+        empl_food_processing, # availability
+        dist_to_marketplace, dist_to_mainroad, auto_conso, 
+        prod_stock, freq_vio_events, # access
+        dist_to_school, healthy_diet, fridge # utilization
+  )
+
+cluster_norm_balanced <- cluster_scaled %>% 
+  select(biodiversity_intactness, water_depletion, croplands_2019_netgain,
+        land_pty_dynamics, # potential
+        crop_production_pmil, crop_production_vege, livestock_tlu_avg, 
+        empl_food_processing, # availability
+        dist_to_marketplace, dist_to_mainroad, auto_conso, 
+        prod_stock, freq_vio_events, # access
+        dist_to_school, healthy_diet, fridge # utilization
+  )
+
+# correlation matrix
+corr_matrix_balanced <- cor(scale(cluster_norm_balanced))
+score_matrix_balanced <- score_matrix(cluster_norm_balanced)
+
+```
+
+```{r png_matrix}
+
+png(file=here('outputs', 'heatmap_corr.png'),
+width=1000, height=800)
+col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(256)
+heatmap(corr_matrix_balanced, scale = "none", col =  rev(col))
+dev.off()
+
+png(file=here('outputs', 'heatmap_pps.png'),
+width=1000, height=800)
+heatmap(score_matrix_balanced, scale = "none", col =  rev(col))
+dev.off()
+```
+
+# Principal Component Analysis (PCA)
+
+```{r}
+
+result<-PCAtest(cluster_balanced, 100, 100, 0.05, indload=TRUE, varcorr=FALSE, counter=FALSE, plot=TRUE)
+# The first 4 PC axes are significant and account for 49.5% of the total variation
+
+data_pca <- PCA(cluster_norm_balanced, graph = FALSE)
+summary(data_pca)
+data_scores <- data_pca$ind$coord[,1:4]
+
+# Kaizer criterion: keep eigenvalue PC > 1
+# data_pca$eig[,1]^2
+
+```
+
+# Hierarchical clustering
+
+```{r}
+
+# distance matrix
+data_dist <- dist(data_scores, method = "euclidian") 
+# hierarchical clustering w/ Ward's method
+data_tree <- hclust(data_dist, method = "ward.D2")
+
+# compute correlation between the cophenetic distances and the distance matrix (i.e. here factor scores) to measure how well the cluster tree reflects the data
+# high correlation means high accuracy of the clustering solution
+tree_coph <- cophenetic(data_tree)
+cor(data_dist, tree_coph)
+
+# Number of clusters
+# load required packages
+library(factoextra)
+library(NbClust)
+
+res_ward.D2 <- NbClust(data_scores, distance = "euclidean", min.nc=2, max.nc=6,
+        method = "ward.D2", index = "all")
+res_ward.D <- NbClust(data_scores, distance = "euclidean", min.nc=2, max.nc=6,
+        method = "ward.D", index = "all")
+res_kmeans <- NbClust(data_scores, distance = "euclidean", min.nc=2, max.nc=6,
+        method = "kmeans", index = "all")
+
+# cut tree in three clusters
+cluster <- cutree(data_tree, k = 3)
+cluster_tree <- data.frame(cluster, cluster_norm_balanced)
+
+# cluster_tree <- cluster_tree %>% mutate(cluster = if_else(cluster == 4, 3, cluster))
+
+```
+
+```{r contributation_indicators}
+
+# estimate the overall mean value of each indicator
+# assign each indicator to a food security dimension
+mean_total <- bind_rows(map(cluster_norm_balanced, mean)) |> 
+  pivot_longer(everything()) |> 
+  mutate(
+    dimension = fct_relevel(as_factor(
+        case_when(
+      name %in% c('biodiversity_intactness', 'water_depletion', 'croplands_2019_netgain', 'land_pty_dynamics') ~ 'Potentiel',
+      name %in% c('crop_production_pmil', 'crop_production_vege', 'livestock_tlu_avg', 'empl_food_processing') ~ 'Disponibilité',
+      name %in% c('dist_to_marketplace', 'dist_to_mainroad', 'price_diff_mean', 'auto_conso', 'prod_stock', 'freq_vio_events') ~ 'Accès',
+      name %in% c('dist_to_school', 'healthy_diet', 'fridge') ~ 'Utilisation'
+  )),
+  "Potentiel", "Disponibilité", "Accès", "Utilisation"),
+  category = if_else(dimension %in% c("Potentiel", "Disponibilité"), 
+                     "Production", "Consumption")
+  )
+
+# estimate the mean value of each indicator at the cluster level
+mean_cluster <- cluster_tree |> 
+  rename(cluster = cluster) %>% 
+  group_by(cluster) |> 
+  summarize(across(where(is.numeric), ~ mean(.x, na.rm = TRUE))) %>% 
+  mutate(cluster = as.factor(cluster))
+
+mean_cluster_list <- split(mean_cluster, 1:nrow(mean_cluster))
+mean_cluster_list <- lapply(mean_cluster_list, function(df) pivot_longer(df, !cluster))
+       
+mean_cluster_list <- lapply(mean_cluster_list, function(df) merge(df, mean_total, by = "name", suffixes = c(".cluster",".total")))
+
+# estimate difference between overall and cluster means
+mean_cluster_list <- lapply(mean_cluster_list, function(df) mutate(df, diff = value.cluster - value.total))
+
+mean_cluster <- rbindlist(mean_cluster_list) %>% 
+    mutate(name = reorder_within(name, diff, cluster))
+
+```
+
+```{r viz_hclust}
+
+# Clusters = 3
+png(file=here('outputs', 'hclust_3.png'),
+width=700, height=500)
+# graph visualization
+require("igraph")
+fviz_dend(data_tree, k = 3,
+     cex = .5, # label size
+     rect = TRUE,
+     k_colors = "jco"
+)
+dev.off()
+
+```
+
+```{r viz_profiles}
+
+palette_dim <- c('#005DB9', '#C4EAFF', '#7030A0', '#EFE5F7')
+palette_cat <- c('#005DB9', '#7030A0')
+
+ggplot(mean_cluster) +
+    geom_bar(aes(x =name, y = diff, fill = dimension), 
+             stat = "identity") +
+    coord_flip() +
+    scale_fill_manual(values = c('#C4EAFF', '#005DB9', '#7030A0', '#EFE5F7')) +
+    labs(x = "Factor", y = "Deviation from average profile") +
+    scale_x_reordered() +
+    theme_minimal() +
+    facet_wrap(~cluster, scales = "free")
+    
+# deviation from average for all variables for each cluster
+lapply(mean_cluster_list, function(df) 
+  df %>% 
+    mutate(name = case_when(
+      name == 'biodiversity_intactness' ~ 'Biodiversité',
+      name == 'water_depletion' ~ 'Appauvrissement en eau',
+      name == 'croplands_2019_netgain' ~ 'Gain net de terres cultivées 2000-2019',
+      name == 'land_pty_dynamics' ~ 'Productivité des sols',
+      name == 'crop_production_pmil' ~ 'Production agricole - millet',
+      name == 'crop_production_vege' ~ 'Production agricole - légumes',
+      name == 'livestock_tlu_avg' ~ 'Unités de bétail tropical (UBT)',
+      name == 'empl_food_processing' ~ 'Emploi agro-alimentaire - Transformation',
+      name == 'dist_to_marketplace' ~  'Distance - Marché',
+      name == 'dist_to_mainroad' ~  'Distance - Route',
+      name == 'price_diff_mean' ~ 'Déviation des prix locaux / moyenne nationale',
+      name == 'auto_conso' ~ 'Auto-consommation',
+      name == 'prod_stock' ~ 'Production agricole stockée',
+      name == 'freq_vio_events' ~ 'Conflits violents',
+      name == 'dist_to_school' ~ 'Distance - Ecole',
+      name == 'healthy_diet' ~ 'Régime alimentaire équilibré',
+      name == 'fridge' ~ 'Frigidaire'
+    )) %>% 
+  ggplot() +
+    geom_bar(aes(x = reorder(name, diff), y = diff, fill = dimension), 
+             stat = "identity") +
+    coord_flip() +
+    scale_fill_manual(values = c('#C4EAFF', '#005DB9', '#7030A0', '#EFE5F7')) +
+    labs(x = "Indicateurs", y = '') +
+    theme_minimal()
+  )
+```
+
+```{r spatial_cluster}
+
+load(here('data', 'grappes.RData'))
+
+merge_cluster_to_grappe <- cluster_tree |> 
+  rownames_to_column(var = "grappe") |> 
+  select(grappe, cluster) |> 
+  mutate(`Food security profile` = case_when(
+    cluster == 1 ~ 'Cluster 1',
+    cluster == 2 ~ 'Cluster 2',
+    cluster == 3 ~ 'Cluster 3'
+  ))
+
+grappe_cluster_sf <- merge_cluster_to_grappe |> 
+  merge(grappe_sf, by = "grappe") |> 
+  st_as_sf()
+
+st_write(grappe_cluster_sf, here('layers', 'grappe_cluster.gpkg'), delete_layer = TRUE)
+save(grappe_cluster_sf, file = here('data','cluster_data.RData'))
+```
+
+```{r population_proportion}
+
+load(here('data','short_survey.RData'))
+
+survey_cluster <- merge_cluster_to_grappe %>%
+  mutate(grappe = as.numeric(grappe)) %>% 
+  left_join(survey_welfare %>% 
+              select(hhid, grappe, region, zae, hhweight, id_adm2), 
+              by = "grappe")
+
+survey_design <- survey_cluster %>% 
+  as_survey_design(ids = c(grappe,hhid), 
+                   strata = c(region, zae), 
+                   weights = hhweight,
+                   nest = TRUE)
+
+# Estimate proportion of population in each cluster 
+survey_design %>% 
+  group_by(cluster) %>% 
+  summarise(pct = 100*survey_prop(), vartype = "ci") %>% 
+  select(-vartype) %>% 
+  pivot_wider(names_from = cluster, values_from = c(pct, pct_se), values_fill = 0) %>% 
+  select(-c(starts_with("pct_se")))
+
+
+# Estimate proportions of each cluster in ADM2
+cluster_idm2 <- survey_design %>% 
+  group_by(id_adm2, cluster) %>% 
+  summarise(pct = 100*survey_prop(), vartype = "ci") %>% 
+  select(-vartype) %>% 
+  pivot_wider(names_from = cluster, values_from = c(pct, pct_se), values_fill = 0) %>% 
+  select(-c(starts_with("pct_se")))
+
+```
+
+```{r voronoi}
+
+load(here('data','cluster_data.RData'))
+
+# qgis_get_argument_specs("qgis:voronoipolygons")
+result <- qgis_run_algorithm("qgis:voronoipolygons",
+                             INPUT = grappe_cluster_sf,
+                             BUFFER = 70,
+                             OUTPUT = here('data', 'voronoi_cluster.gpkg')
+)
+
+st_write(voronoi_cluster, here('layers', 'voronoi_cluster.gpkg'), delete_layer = TRUE)
+
+```

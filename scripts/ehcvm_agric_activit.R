@@ -81,6 +81,8 @@ agri_activity_by_grappe <- pivot_longer_agri_activity_by_grappe %>%
     landless_pastoral = sum(landless_pastoral, na.rm = TRUE),
     cropping_only = sum(cropping_only, na.rm = TRUE),
     cropping_pastoral = sum(cropping_pastoral, na.rm = TRUE),
+    pastoral = landless_pastoral + cropping_pastoral,
+    landless = landless_only + landless_pastoral,
     .by = 'grappe'
   )
 

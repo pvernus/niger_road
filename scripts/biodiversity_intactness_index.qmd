@@ -1,0 +1,28 @@
+---
+title: "Biodiversity intactness index"
+format: html
+editor: visual
+---
+
+```{r}
+
+load(here('data', 'grappe_gps.RData')) # grappe_buffer: buffers around EAs
+
+biodiversity_intactness <- terra::rast(here('data_raw', 'leon_data', 'rasters', 'Biodiversity_intactness_index.tif'))
+
+# terra::crs(biodiversity_intactness)
+
+biodiversity_intactness_by_grappe <- biodiversity_intactness %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  group_by(id) %>% 
+    summarize(biodiversity_intactness = sum(value * coverage_fraction, na.rm = TRUE) / sum(coverage_fraction, na.rm = TRUE))
+
+# merge 
+biodiversity_intactness <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(biodiversity_intactness_by_grappe, by = "id")
+
+save(biodiversity_intactness, file = here('data', 'biodiversity_intactness.RData'))
+
+```

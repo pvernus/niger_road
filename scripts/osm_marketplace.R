@@ -6,16 +6,27 @@ source("R/functions.R") # load functions
 # load("data/ner_adm.RData")
 
 # niger <- opq_osm_id (id = 192786, type = "relation") %>% opq_string () %>% osmdata_sf ()
-# osm_marketplace <- opq(bbox = c(-0.5,11.16,16.42,23.7)) 
+# osm_marketplace <- opq(bbox = c(-0.549316,10.703792,16.589355,24.086589)) cf. 
 
 bb <- getbb("Niger", featuretype = "country")
-osm_marketplace <- bb %>%
-  opq() %>% 
+
+osm_marketplace <- opq(bbox = c(-0.549316,10.703792,16.589355,24.086589), # source: http://bboxfinder.com/
+                       timeout = 100) %>% 
   add_osm_feature(key = 'amenity', value = 'marketplace') %>% 
   osmdata_sf()
 
-marketplace <- osm_marketplace$osm_polygons %>% 
-  select(osm_id, name, amenity, landuse, geometry)
+marketplace <- osm_marketplace$osm_points %>%
+  select(osm_id, name, amenity)
+
+save(marketplace, file = here('data', 'osm_points_marketplace.RData'))
+st_write(marketplace, here('data', 'osm_points_marketplace.gpkg'))
+
+===
+
+
+
+
+
 
 st_reason_invalid(marketplace)
 st_reason_invalid(adm03)
