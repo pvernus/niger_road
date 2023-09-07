@@ -1,0 +1,676 @@
+---
+title: "Scenario analysis: Climate hazard"
+format: html
+editor: visual
+---
+
+```{r regional_network}
+# Build regional network
+highway_trunk <- st_read(here('layers', 'highway_trunk.gpkg')) %>% 
+    select(full_id, osm_id, osm_type, highway)
+highway_primary <- st_read(here('layers', 'highway_primary.gpkg')) %>% 
+    select(full_id, osm_id, osm_type, highway)
+highway_secondary <- st_read(here('layers', 'highway_secondary.gpkg')) %>% 
+      select(full_id, osm_id, osm_type, highway)
+highway_tertiary <- st_read(here('layers', 'highway_tertiary.gpkg')) %>% 
+      select(full_id, osm_id, osm_type, highway)
+
+regional_highway_net <- rbind(highway_trunk, highway_primary, highway_secondary, highway_tertiary)
+
+regional_highway_net <- regional_highway_net %>%
+  mutate(highway = case_when(
+    highway == 'trunk_link' ~ 'trunk',
+    highway == 'primary_link' ~ 'primary',
+    highway == 'secondary_link' ~ 'secondary',
+    highway == 'tertiary_link' ~ 'tertiary',
+    .default = as.character(highway)
+  ))
+
+regional_highway_net <- regional_highway_net %>% 
+  mutate(
+    maxspeed = case_when(
+      highway %in% c('trunk', 'primary') ~ 100,
+      highway %in% c('secondary') ~ 80,   
+      highway %in% c('tertiary') ~ 20, 
+    )
+  )
+
+st_write(regional_highway_net, here('layers', 'regional_highway_net.gpkg'), 
+         delete_layer = TRUE)
+
+```
+
+```{r ner_mainroad_lines}
+
+# load osm data
+hotosm_niger_roads <- st_read(here('data_raw', 'hotosm_niger_roads_gpkg', 'hotosm_niger_roads.gpkg')) %>% 
+  filter(highway %in% c('trunk', 'trunk_link', 'primary_link', 'primary', 
+                        'secondary_link', 'secondary', 
+                        'tertiary_link', 'tertiary')) %>% 
+  mutate(highway = case_when(
+    highway == 'trunk_link' ~ 'trunk',
+    highway == 'primary_link' ~ 'primary',
+    highway == 'secondary_link' ~ 'secondary',
+    highway == 'tertiary_link' ~ 'tertiary',
+    .default = as.character(highway)
+  ))
+
+hotosm_niger_roads <- hotosm_niger_roads %>% 
+  mutate(
+    maxspeed = case_when(
+      highway %in% c('trunk', 'primary') ~ 100,
+      highway %in% c('secondary') ~ 80,   
+      highway %in% c('tertiary') ~ 20, 
+    )
+  ) %>% 
+  select(-c(name:smoothness, lanes:layer))
+
+st_write(hotosm_niger_roads, here('data', 'hotosm_niger_roads_clean.gpkg'), 
+         delete_layer = T)
+
+```
+
+```{r baseline_scenario}
+
+# prepare the dataset
+baseline_scenario_lines <- st_cast(hotosm_niger_roads, "LINESTRING") %>% 
+  select(osm_id, highway, maxspeed)
+
+# st_geometry(baseline_scenario_lines) = st_geometry(baseline_scenario_lines) %>%
+#  lapply(function(x) round(x, 3)) %>% # round coordinates
+#  st_sfc(crs = st_crs(baseline_scenario_lines))
+
+combinations = list(
+  osm_id = "first",
+  highway = 'first', # chooses the first attribute value (i.e. longest length as we apply arrange(edge_length()))
+  maxspeed = 'mean',
+  "ignore"
+)
+
+simple =  as_sfnetwork(baseline_scenario_lines, directed = FALSE) %>% 
+  activate("edges") %>%
+  arrange(edge_length()) %>%
+  filter(!edge_is_multiple()) %>%
+  filter(!edge_is_loop())
+
+subdivision = convert(simple, to_spatial_subdivision)
+
+smooth = convert(subdivision, to_spatial_smooth, summarise_attributes = combinations) %>% # remove pseudo nodes
+  activate("edges") %>%
+  arrange(edge_length()) %>%
+  filter(!edge_is_multiple()) %>%
+  filter(!edge_is_loop())
+
+```
+
+```{r contracted_net}
+
+# Retrieve the coordinates of the nodes.
+node_coords = smooth %>%
+  activate("nodes") %>%
+  st_coordinates()
+
+# Cluster the nodes with the DBSCAN spatial clustering algorithm.
+# We set eps = 0.5 such that:
+# Nodes within a distance of 0.5 from each other will be in the same cluster.
+# We set minPts = 1 such that:
+# A node is assigned a cluster even if it is the only member of that cluster.
+clusters = dbscan(node_coords, eps = 0.01, minPts = 1)$cluster
+
+# Add the cluster information to the nodes of the network.
+clustered = smooth %>%
+  activate("nodes") %>%
+  mutate(cls = clusters)
+
+clustered = clustered %>%
+  mutate(cmp = group_components())
+
+combinations = list(
+  osm_id = 'first',
+  highway = 'first',
+  maxspeed = 'mean',
+  cls = 'first',
+  cmp = 'first',
+  "ignore"
+)
+
+contracted = convert(
+  clustered,
+  to_spatial_contracted,
+  cls, cmp,
+  simplify = TRUE,
+  summarise_attributes = combinations
+)
+
+```
+
+# Transport network criticality analysis
+
+```{r regional_smooth}
+
+regional_highway_lines <- st_cast(regional_highway_net, "LINESTRING") %>% 
+  select(osm_id, highway, maxspeed)
+
+combinations = list(
+  osm_id = "first",
+  highway = 'first', # chooses the first attribute value (i.e. longest length as we apply arrange(edge_length()))
+  maxspeed = 'mean',
+  "ignore"
+)
+
+reg_simple =  as_sfnetwork(regional_highway_lines, directed = FALSE) %>% 
+  activate("edges") %>%
+  arrange(edge_length()) %>%
+  filter(!edge_is_multiple()) %>%
+  filter(!edge_is_loop())
+
+reg_subdivision = convert(reg_simple, to_spatial_subdivision)
+
+reg_smooth = convert(reg_subdivision, to_spatial_smooth, summarise_attributes = combinations) %>% # remove pseudo nodes
+  activate("edges") %>%
+  arrange(edge_length()) %>%
+  filter(!edge_is_multiple()) %>%
+  filter(!edge_is_loop())
+
+reg_baseline_scenario <- reg_smooth %>% 
+  activate(edges) %>%
+  mutate(
+    weight = edge_length(),
+    edge_betweenness_bau = scales::rescale(
+      centrality_edge_betweenness(weights = weight),
+      to = c(0, 1))
+  ) %>% 
+  activate(nodes) %>%
+  mutate(
+    centrality_betweenness_bau = scales::rescale(
+      centrality_betweenness(weights = weight), to = c(0, 1)),
+    centrality_closeness_bau = scales::rescale(
+      centrality_closeness_harmonic(), to = c(0 , 1))
+  )
+
+reg_baseline_scenario %>% activate(edges) %>% st_as_sf() %>% 
+  select(-.tidygraph_edge_index) %>% 
+  st_write(here('QGIS', 'Regional', 'edges_reg_baseline_scenario.gpkg'), 
+         delete_layer = T)
+
+reg_baseline_scenario %>% activate(nodes) %>% st_as_sf() %>% 
+  st_write(here('QGIS', 'Regional', 'nodes_reg_baseline_scenario.gpkg'), 
+         delete_layer = T)
+
+# SIM 1: 16205, 14951, 12958, 17407, 17574, 17406
+# SIM 2: 16754, 16753
+# SIM 3: 15442, 11483, 13861, 18911
+
+sim3_reg_scenario <- reg_baseline_scenario %>% activate(nodes) %>% 
+  filter(!.tidygraph_node_index %in% c(15442, 11483, 13861, 18911))
+sim3_reg_scenario %>% activate(edges) %>% st_as_sf() %>% 
+  select(-.tidygraph_edge_index) %>% 
+  st_write(here('QGIS', 'Regional', 'reg_edges_sim3.gpkg'), 
+         delete_layer = T)
+
+```
+
+```{r centrality_baseline}
+
+# Betweenness Centrality
+# Travel cost / Egalitarian / Local
+
+graph_baseline_scenario <- smooth %>% 
+  activate(edges) %>%
+  mutate(
+    weight = edge_length(),
+    edge_betweenness_bau = scales::rescale(
+      centrality_edge_betweenness(weights = weight),
+      to = c(0, 1))
+  ) %>% 
+  activate(nodes) %>%
+  mutate(
+    centrality_betweenness_bau = scales::rescale(
+      centrality_betweenness(weights = weight), to = c(0, 1)),
+    centrality_closeness_bau = scales::rescale(
+      centrality_closeness_harmonic(), to = c(0 , 1))
+  )
+
+graph_baseline_scenario %>% activate(edges) %>% st_as_sf() %>% 
+  select(-.tidygraph_edge_index) %>% 
+  st_write(here('QGIS', 'Baseline', 'edges_baseline_scenario.gpkg'), 
+         delete_layer = T)
+
+graph_baseline_scenario %>% activate(nodes) %>% st_as_sf() %>% 
+  st_write(here('QGIS', 'Baseline', 'nodes_baseline_scenario.gpkg'), 
+         delete_layer = T)
+
+data = graph_baseline_scenario %>% 
+  activate(nodes) %>% 
+  as_tibble()
+summary(data$centrality_betweenness_bau)
+
+```
+
+```{r SIM1_tillaberi_niamey}
+
+sim_tillaberi_niamey_nodes <- c(15, 16, 17, 18, 25, 26, 27, 28, 33, 34, 58, 59, 138, 139, 146, 147, 150, 151, 158, 159, 189, 190, 205, 206, 219, 220, 289, 290, 293, 294, 311, 312, 319, 320, 327, 328, 377, 378, 402, 403, 420, 421, 431, 436, 437, 532, 533, 540, 541, 561, 564, 565, 609, 610, 616, 617, 634, 635, 684, 685, 738, 742, 743, 759, 760, 787, 788, 796, 855, 882, 883, 906, 907, 920, 923, 924, 927, 948, 949, 952, 961, 962, 1016, 1017, 1024, 1028, 1037, 1041, 1068, 1069, 1074, 1128, 1129, 1159, 1160, 1192, 1193, 1194, 1195, 1216, 1217, 1257, 1282, 1314, 1315, 1316, 1317, 1318, 1319, 1374, 1375, 1376, 1377, 1378, 1396, 1397, 1403, 1439, 1444, 1445, 1484, 1485, 1486, 1503, 1504, 1512, 1525, 1541, 1547, 1548, 1549, 1587, 1592, 1593, 1595, 1596, 1613, 1635, 1694, 1732, 1740, 1764, 1778, 1779, 1836, 1837, 1857, 1902, 1905, 1911, 2041, 2123, 2150, 2188, 2190, 2191, 2192, 2203, 2210, 2219, 2277, 2281, 2282, 2322, 2323, 2324, 2351, 2367, 2368, 2376, 2394, 2395, 2416, 2417, 2485, 2489, 2491, 2551, 2552, 2569, 2685, 2700, 2709, 2720, 2724, 2741, 2742, 2766, 2767, 2768, 2769, 2797, 2798, 2799, 2821, 2822, 2823, 2868, 2886, 2960, 2961, 2979, 2980, 2981, 3128, 3209, 3212, 3215, 3311, 3312, 3414, 3419, 3553, 3621, 3622, 3637)
+
+# Network components serviceability 
+graph_sim_tillaberi_niamey <- graph_baseline_scenario %>% 
+  activate(nodes) %>%
+  filter(!.tidygraph_node_index %in% c(1104, 1105, 1106, 934, 935, 607, 1427, 1323, 608, 1428, 1260, 1450, 1261)) %>% 
+  mutate(
+    centrality_betweenness_sim = scales::rescale(
+      centrality_betweenness(weights = weight, directed = FALSE), to = c(0, 1)),
+    centrality_closeness = scales::rescale(
+      centrality_closeness_harmonic(), to = c(0 , 1)),
+    diff = centrality_betweenness_sim - centrality_betweenness_bau,
+    var = centrality_betweenness_sim / centrality_betweenness_bau
+  ) %>% 
+  activate(edges) %>%
+  mutate(
+    edge_betweenness_sim = scales::rescale(
+      centrality_edge_betweenness(weights = weight),
+      to = c(0, 1)),
+    diff = edge_betweenness_sim - edge_betweenness_bau
+  )
+
+graph_sim_tillaberi_niamey %>% activate(edges) %>% st_as_sf() %>% 
+  select(-.tidygraph_edge_index) %>% 
+  st_write(here('QGIS', 'SIM1_Tillaberi_Niamey', 'edges_s1_tillaberi_niamey.gpkg'), 
+         delete_layer = T)
+
+graph_sim_tillaberi_niamey %>% activate(nodes) %>% st_as_sf() %>% 
+  select(-.tidygraph_node_index) %>% 
+  st_write(here('QGIS', 'SIM1_Tillaberi_Niamey', 'nodes_s1_tillaberi_niamey.gpkg'), 
+         delete_layer = T)
+
+sim_tillaberi_niamey <- graph_sim_tillaberi_niamey %>% 
+  activate(nodes) %>% 
+  as_tibble() %>% 
+  select(.tidygraph_node_index, diff, var) %>% 
+  mutate(sim = 'Tillaberi - Niamey')
+
+data = graph_sim_tillaberi_niamey %>% 
+  activate(nodes) %>% 
+  as_tibble()
+summary(data$diff)
+summary(data$centrality_betweenness_sim)
+
+```
+
+```{r SIM2__dosso_dogondoutchi}
+
+sim_dosso_dogondoutchi_nodes <- c(78, 79, 247, 248, 410, 411, 512, 594, 595, 725, 748, 803, 941, 942, 984, 1000, 1001, 1040, 1200, 1201, 1254, 1279, 1344, 1402, 1432, 1609, 2155, 2156, 2381, 2564, 2568, 2652, 2717, 2774, 2849, 2930, 2945, 3029, 3178, 3179, 3353, 3593, 3682, 3683, 3992, 4022, 4043, 4044, 4074)
+
+graph_sim_dosso_dogondoutchi <- graph_baseline_scenario %>%
+  activate(nodes) %>%
+  filter(!.tidygraph_node_index %in% 3682) %>% 
+  mutate(
+    centrality_betweenness_sim = scales::rescale(
+      centrality_betweenness(weights = weight), to = c(0, 1)),
+    centrality_closeness = scales::rescale(
+      centrality_closeness_harmonic(), to = c(0 , 1)),
+    diff = centrality_betweenness_sim - centrality_betweenness_bau
+  ) %>% 
+  activate(edges) %>%
+  mutate(
+    edge_betweenness_sim = scales::rescale(
+      centrality_edge_betweenness(weights = weight),
+      to = c(0, 1)),
+    diff = edge_betweenness_sim - edge_betweenness_bau
+  )
+
+graph_sim_dosso_dogondoutchi %>% activate(nodes) %>% st_as_sf() %>% 
+  select(-.tidygraph_node_index) %>% 
+  st_write(here('QGIS', 'SIM2_Dosso_Dogondoutchi', 'nodes_s2_dosso_dogondoutchi.gpkg'), 
+         delete_layer = T)
+
+graph_sim_dosso_dogondoutchi %>%
+  activate(edges) %>%
+  st_as_sf() %>% 
+  select(-.tidygraph_edge_index) %>% 
+  st_write(here('QGIS', 'SIM2_Dosso_Dogondoutchi', 'edges_s2_dosso_dogondoutchi.gpkg'), 
+         delete_layer = T)
+
+sim_dosso_dogondoutchi <- graph_sim_dosso_dogondoutchi %>% 
+  activate(nodes) %>% 
+  as_tibble() %>% 
+  mutate(sim = 'Dosso - Dogondoutchi')
+
+data = graph_sim_dosso_dogondoutchi %>% 
+  activate(nodes) %>% 
+  as_tibble()
+summary(data$diff)
+summary(data$centrality_betweenness_sim)
+```
+
+```{r SIM3__guidimouni_goure}
+
+sim_guidimouni_goure_nodes <-  c(3514, 3515, 3940, 4133)
+
+graph_sim_guidimouni_goure <- graph_baseline_scenario %>% 
+  activate(nodes) %>%
+  filter(!.tidygraph_node_index %in% sim_guidimouni_goure_nodes) %>% 
+  mutate(
+    centrality_betweenness_sim = scales::rescale(
+      centrality_betweenness(weights = weight), to = c(0, 1)),
+    centrality_closeness = scales::rescale(
+      centrality_closeness_harmonic(), to = c(0 , 1)),
+    diff = centrality_betweenness_sim - centrality_betweenness_bau,
+    var = centrality_betweenness_sim / centrality_betweenness_bau
+  ) %>% 
+  activate(edges) %>%
+  mutate(
+    edge_betweenness_sim = scales::rescale(
+      centrality_edge_betweenness(weights = weight),
+      to = c(0, 1)),
+    diff = edge_betweenness_sim - edge_betweenness_bau
+  )
+
+graph_sim_guidimouni_goure %>% activate(nodes) %>% st_as_sf() %>% 
+  select(-.tidygraph_node_index) %>% 
+  st_write(here('QGIS', 'SIM3_guidimouni_goure', 'nodes_s3_guidimouni_goure.gpkg'), 
+         delete_layer = T)
+
+graph_sim_guidimouni_goure %>% activate(edges) %>% st_as_sf() %>% 
+  select(-.tidygraph_edge_index) %>% 
+  st_write(here('QGIS', 'SIM3_guidimouni_goure', 'edges_s3_guidimouni_goure.gpkg'), 
+         delete_layer = T)
+
+sim_guidimouni_goure <- graph_sim_guidimouni_goure %>% activate(nodes) %>% 
+  as_tibble() %>% 
+  select(.tidygraph_node_index, diff, var) %>% 
+  mutate(sim = 'Guidimouni - Goure')
+
+data = graph_sim_guidimouni_goure %>% 
+  activate(nodes) %>% 
+  as_tibble()
+summary(data$diff)
+summary(data$centrality_betweenness_sim)
+
+```
+
+```{r SIM4_maine_soroa_diffa}
+# Djadjiri Manga - Diffa
+
+sim_maine_soroa_diffa <- c(1043, 1044, 1080, 1120, 2432, 2433, 2856, 2988, 3315, 3316, 3317, 3318, 3378, 3379, 3399, 3400, 3499, 3500, 3608, 3609, 3629, 3630, 3793)
+
+graph_sim_maine_soroa_diffa <- graph_baseline_scenario %>% 
+  activate(edges) %>%
+  mutate(
+    edge_betweenness_sim = scales::rescale(
+      centrality_edge_betweenness(weights = weight),
+      to = c(0, 1)),
+    diff = edge_betweenness_sim - edge_betweenness_bau
+  ) %>% 
+  activate(nodes) %>%
+  filter(!.tidygraph_node_index %in% sim_maine_soroa_diffa) %>% 
+  mutate(
+    centrality_betweenness_sim = scales::rescale(
+      centrality_betweenness(weights = weight), to = c(0, 1)),
+    centrality_closeness = scales::rescale(
+      centrality_closeness_harmonic(), to = c(0 , 1)),
+    diff = centrality_betweenness_sim - centrality_betweenness_bau,
+    sd = centrality_betweenness_sim / centrality_betweenness_bau
+  )
+
+graph_sim_maine_soroa_diffa %>% activate(nodes) %>% st_as_sf() %>% 
+  select(-.tidygraph_node_index) %>% 
+  st_write(here('QGIS', 'SIM4_maine_soroa_diffa', 'nodes_s4_maine_soroa_diffa.gpkg'), 
+         delete_layer = T)
+
+sim_maine_soroa_diffa <- graph_sim_maine_soroa_diffa %>% activate(nodes) %>% 
+  as_tibble() %>% 
+  select(.tidygraph_node_index, diff) %>% 
+  mutate(sim = 'Maine Soroa - Diffa')
+
+data = graph_sim_maine_soroa_diffa %>% 
+  activate(nodes) %>% 
+  as_tibble()
+summary(data$diff)
+summary(data$centrality_betweenness_sim)
+
+```
+
+```{r}
+
+graph_sim_all <- graph_baseline_scenario %>%
+  activate(nodes) %>%
+  filter(!.tidygraph_node_index %in% c(sim_tillaberi_niamey_nodes, sim_dosso_dogondoutchi_nodes, 
+                                       sim_guidimouni_goure_nodes, sim_maine_soroa_diffa)) %>% 
+  mutate(
+    centrality_betweenness_sim = scales::rescale(
+      centrality_betweenness(weights = weight), to = c(0, 1)),
+    diff = centrality_betweenness_sim - centrality_betweenness_bau
+    )
+
+```
+
+```{r}
+
+data <- rbind(sim_dosso_dogondoutchi, sim_guidimouni_goure, 
+              sim_tillaberi_niamey, sim_maine_soroa_diffa) %>%
+  st_drop_geometry()
+
+# sample size
+data %>% 
+  group_by(sim) %>% 
+  summarize(mean = mean(diff, na.rm = T),
+            median = median(diff, na.rm = T),
+            min = min(diff, na.rm = T),
+            max = max(diff, na.rm = T),
+            )
+
+# basic example
+ggplot(data, aes(x = diff, y = sim, fill = sim)) +
+  ggridges::geom_density_ridges() +
+  ggridges::theme_ridges() + 
+  theme(legend.position = "none")
+
+data %>%
+  ggplot( aes(x=sim, y=var, fill=sim)) +
+    geom_boxplot() +
+    scale_fill_viridis(discrete = TRUE, alpha=0.6)
+
+```
+
+# OD k-connnectivity
+
+Functionality Ethical Aggregation
+
+Connectivity Egalitarian Networkwide
+
+```{r od_k_co_baseline}
+
+# OD k-connectivity: decrease in the number of distinct shortest paths among all origin-destination pair due to a disruption of an element
+
+## Baseline
+# select edges
+edges_baseline_scenario = graph_baseline_scenario %>% 
+  activate('edges') %>% 
+  st_as_sf()
+# convert to dodgr format
+net_baseline <- weight_streetnet (edges_baseline_scenario, 
+                                  wt_profile = "motorcar")
+
+net_baseline <- net_baseline [which (net_baseline$component == 1), ]
+
+# select nodes coordinates
+from_baseline <- net_baseline[,4:5]
+to_baseline <- net_baseline[,7:8]
+# get results for shortest paths
+results_baseline <- dodgr_dists_nearest(graph = net_baseline, 
+                                from = from_baseline, to = to_baseline)
+# summary
+summary(results_baseline$d)
+
+# distinct shortest paths
+distinct_shortest_paths_baseline = as_tibble(results_baseline) %>% 
+  filter(d != 0) %>% 
+  n_distinct() %>% 
+  as.double()
+
+```
+
+```{r connectivity_sim1_Tillaberi Niamey}
+
+## Simulation 1: Tillaberi Niamey
+
+edges_sim_tillaberi_niamey_lines = graph_sim_tillaberi_niamey %>% 
+  activate('edges') %>% 
+  st_as_sf()
+
+net_tillaberi_niamey <- weight_streetnet (edges_sim_tillaberi_niamey_lines, 
+                                              wt_profile = "motorcar")
+
+net_tillaberi_niamey <- net_tillaberi_niamey [which (net_tillaberi_niamey$component == 1), ]
+
+from_tillaberi_niamey <- net_tillaberi_niamey[,4:5]
+to_tillaberi_niamey <- net_tillaberi_niamey[,7:8]
+
+results_tillaberi_niamey <- dodgr_dists_nearest(graph = net_tillaberi_niamey, 
+                                from = from_tillaberi_niamey, to = to_tillaberi_niamey)
+
+summary(results_tillaberi_niamey$d)
+
+distinct_shortest_paths_tillaberi_niamey = as_tibble(results_tillaberi_niamey) %>% 
+  filter(d != 0) %>% 
+  n_distinct() %>% 
+  as.double()
+
+distinct_shortest_paths_tillaberi_niamey - distinct_shortest_paths_baseline
+100 * distinct_shortest_paths_tillaberi_niamey / distinct_shortest_paths_baseline
+
+```
+
+```{r connectivity_sim2_dosso_dogondoutchi}
+
+## Simulation 2: scenario_dosso_dogondoutchi
+
+edges_sim_dosso_dogondoutchi = graph_sim_dosso_dogondoutchi %>% 
+  activate('edges') %>% 
+  st_as_sf()
+
+net_dosso_dogondoutchi <- weight_streetnet (edges_sim_dosso_dogondoutchi, 
+                                              wt_profile = "motorcar")
+
+net_dosso_dogondoutchi <- net_dosso_dogondoutchi [which (net_dosso_dogondoutchi$component == 1), ]
+
+from_dosso_dogondoutchi <- net_dosso_dogondoutchi[,4:5]
+to_dosso_dogondoutchi <- net_dosso_dogondoutchi[,7:8]
+
+results_dosso_dogondoutchi <- dodgr_dists_nearest(graph = net_dosso_dogondoutchi, 
+                                from = from_dosso_dogondoutchi, to = to_dosso_dogondoutchi)
+
+summary(results_dosso_dogondoutchi$d)
+
+distinct_shortest_paths_dosso_dogondoutchi = as_tibble(results_dosso_dogondoutchi) %>% 
+  filter(d != 0) %>% 
+  n_distinct() %>% 
+  as.double()
+
+distinct_shortest_paths_dosso_dogondoutchi - distinct_shortest_paths_baseline
+100 * distinct_shortest_paths_dosso_dogondoutchi / distinct_shortest_paths_baseline
+```
+
+```{r connectivity_sim3_guidimouni_goure}
+
+## Simulation 3: scenario_guidimouni_goure
+
+edges_sim_guidimouni_goure_lines = graph_sim_guidimouni_goure %>% 
+  activate('edges') %>% 
+  st_as_sf()
+
+net_guidimouni_goure <- weight_streetnet (edges_sim_guidimouni_goure_lines, 
+                                              wt_profile = "motorcar")
+
+net_guidimouni_goure <- net_guidimouni_goure [which (net_guidimouni_goure$component == 1), ]
+
+from_guidimouni_goure <- net_guidimouni_goure[,4:5]
+to_guidimouni_goure <- net_guidimouni_goure[,7:8]
+
+results_guidimouni_goure <- dodgr_dists_nearest(graph = net_guidimouni_goure, 
+                                from = from_guidimouni_goure, to = to_guidimouni_goure)
+
+summary(results_guidimouni_goure$d)
+
+distinct_shortest_paths_guidimouni_goure = as_tibble(results_guidimouni_goure) %>% 
+  filter(d != 0) %>% 
+  n_distinct() %>% 
+  as.double()
+
+distinct_shortest_paths_guidimouni_goure - distinct_shortest_paths_baseline
+100 * distinct_shortest_paths_guidimouni_goure / distinct_shortest_paths_baseline
+
+```
+
+```{r connectivity_sim4_maine_soroa_diffa}
+
+## Simulation 4: scenario_maine_soroa_diffa
+
+edges_sim_maine_soroa_diffa_lines = graph_sim_maine_soroa_diffa %>% 
+  activate('edges') %>% 
+  st_as_sf()
+
+net_maine_soroa_diffa <- weight_streetnet (edges_sim_maine_soroa_diffa_lines, 
+                                              wt_profile = "motorcar")
+
+net_maine_soroa_diffa <- net_maine_soroa_diffa [which (net_maine_soroa_diffa$component == 1), ]
+
+from_maine_soroa_diffa <- net_maine_soroa_diffa[,4:5]
+to_maine_soroa_diffa <- net_maine_soroa_diffa[,7:8]
+
+results_maine_soroa_diffa <- dodgr_dists_nearest(graph = net_maine_soroa_diffa, 
+                                from = from_maine_soroa_diffa, to = to_maine_soroa_diffa)
+
+summary(results_maine_soroa_diffa$d)
+
+distinct_shortest_paths_maine_soroa_diffa = as_tibble(results_maine_soroa_diffa) %>% 
+  filter(d != 0) %>% 
+  n_distinct() %>% 
+  as.double()
+
+distinct_shortest_paths_maine_soroa_diffa - distinct_shortest_paths_baseline
+100 * distinct_shortest_paths_maine_soroa_diffa / distinct_shortest_paths_baseline
+
+```
+
+```{r connectivity_all}
+
+edges_sim_all_lines = graph_sim_all %>% 
+  activate('edges') %>% 
+  st_as_sf()
+
+net_sim_all <- weight_streetnet (edges_sim_all_lines, 
+                                              wt_profile = "motorcar")
+from_all <- net_sim_all[,4:5]
+to_all <- net_sim_all[,7:8]
+
+results_sim_all <- dodgr_dists_nearest(graph = net_sim_all, 
+                                from = from_all, to = to_all)
+
+summary(results_sim_all$d)
+
+distinct_shortest_paths_all = as_tibble(results_sim_all) %>% 
+  filter(d != 0) %>% 
+  n_distinct() %>% 
+  as.double()
+
+distinct_shortest_paths_all - distinct_shortest_paths_baseline
+100 * distinct_shortest_paths_all / distinct_shortest_paths_baseline
+```
+
+```{r scenrario_clusters}
+
+# FNS clusters grappe_cluster <- st_read(here('layers', 'grappe_cluster.gpkg'))  from <- st_coordinates(grappe_cluster) to <- st_coordinates(grappe_cluster)  x <- dodgr_times(graph = net, from = from, to = to) x <- dodgr_dists(graph = net, from = from, to = to)  
+```
+
+```{r}
+
+graph_full <- weight_streetnet (hampi)
+graph <- dodgr_contract_graph (net_baseline)
+graph <- dodgr_centrality (graph)
+graph_full <- dodgr_uncontract_graph (graph)
+graph_sf <- merge_directed_graph (graph_full) %>%
+    dodgr_to_sf ()
+
+st_write(graph_sf, here('QGIS', 'edges_centrality_dodgr.gpkg'), 
+         delete_layer = T)
+```

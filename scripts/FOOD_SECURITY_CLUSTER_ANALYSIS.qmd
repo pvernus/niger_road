@@ -15,12 +15,17 @@ source(here::here('scripts', 'library.R'))
 # load all variables that could be used as food security indicators
 load(here('data', 'production.RData'))
 load(here('data', 'consumption.RData'))
+load(here('data', 'transversal.RData'))
 
 # create a dataframe w/ all indicators
 cluster_data <- merge(consumption %>% st_drop_geometry(), 
-                      production %>% st_drop_geometry(), 
+                      production %>% st_drop_geometry(),
                       by = 'grappe') %>% 
-  column_to_rownames(var = "grappe") 
+  merge(transversal %>% st_drop_geometry(),
+                      by = 'grappe') %>% 
+  column_to_rownames(var = "grappe")
+
+vis_miss(cluster_data)
 
 ```
 
@@ -44,24 +49,10 @@ heatmap(corr_matrix, scale = "none", col =  rev(col))
 ```{r indicator_balancing}
 # reduce number of variables to avoid collinearity
 cluster_balanced <- cluster_data %>% 
-    select(biodiversity_intactness, water_depletion, croplands_2019_netgain,
-        land_pty_dynamics, # potential
-        crop_production_pmil, crop_production_vege, livestock_tlu_avg, 
-        empl_food_processing, # availability
-        dist_to_marketplace, dist_to_mainroad, auto_conso, 
-        prod_stock, freq_vio_events, # access
-        dist_to_school, healthy_diet, fridge # utilization
-  )
+    select(-c(diet_diversified, food_prices_avg, sh_fatalities))
 
 cluster_norm_balanced <- cluster_scaled %>% 
-  select(biodiversity_intactness, water_depletion, croplands_2019_netgain,
-        land_pty_dynamics, # potential
-        crop_production_pmil, crop_production_vege, livestock_tlu_avg, 
-        empl_food_processing, # availability
-        dist_to_marketplace, dist_to_mainroad, auto_conso, 
-        prod_stock, freq_vio_events, # access
-        dist_to_school, healthy_diet, fridge # utilization
-  )
+    select(-c(diet_diversified, food_prices_avg,sh_fatalities))
 
 # correlation matrix
 corr_matrix_balanced <- cor(scale(cluster_norm_balanced))
@@ -88,15 +79,16 @@ dev.off()
 ```{r}
 
 result<-PCAtest(cluster_balanced, 100, 100, 0.05, indload=TRUE, varcorr=FALSE, counter=FALSE, plot=TRUE)
-# The first 4 PC axes are significant and account for 49.5% of the total variation
+# The first 2 PC axes are significant and account for 49.6% of the total variation
 
 data_pca <- PCA(cluster_norm_balanced, graph = FALSE)
 summary(data_pca)
-data_scores <- data_pca$ind$coord[,1:4]
+data_scores <- data_pca$ind$coord[,1:3]
 
 # Kaizer criterion: keep eigenvalue PC > 1
 # data_pca$eig[,1]^2
 
+save(cluster_balanced, cluster_norm_balanced, corr_matrix_balanced, score_matrix_balanced, data_pca, data_scores, file = here('data', 'pca_results.RData'))
 ```
 
 # Hierarchical clustering
@@ -131,6 +123,7 @@ cluster_tree <- data.frame(cluster, cluster_norm_balanced)
 
 # cluster_tree <- cluster_tree %>% mutate(cluster = if_else(cluster == 4, 3, cluster))
 
+save(data_dist, data_tree, cluster_tree, file = here('data', 'hca_results.RData'))
 ```
 
 ```{r contributation_indicators}
@@ -142,16 +135,18 @@ mean_total <- bind_rows(map(cluster_norm_balanced, mean)) |>
   mutate(
     dimension = fct_relevel(as_factor(
         case_when(
-      name %in% c('biodiversity_intactness', 'water_depletion', 'croplands_2019_netgain', 'land_pty_dynamics') ~ 'Potentiel',
-      name %in% c('crop_production_pmil', 'crop_production_vege', 'livestock_tlu_avg', 'empl_food_processing') ~ 'Disponibilité',
-      name %in% c('dist_to_marketplace', 'dist_to_mainroad', 'price_diff_mean', 'auto_conso', 'prod_stock', 'freq_vio_events') ~ 'Accès',
-      name %in% c('dist_to_school', 'healthy_diet', 'fridge') ~ 'Utilisation'
-  )),
-  "Potentiel", "Disponibilité", "Accès", "Utilisation"),
-  category = if_else(dimension %in% c("Potentiel", "Disponibilité"), 
-                     "Production", "Consumption")
-  )
-
+      name %in% c('biodiversity_intactness_index', 'water_depletion_ratio', 'sh_total_precipitation', 'sh_built_up_change') ~ 'Potential',
+      name %in% c('sh_landless', 'sh_input_from_market', 'empl_food_processing', 'sh_credit_access') ~ 'Availability',
+      name %in% c('sh_imp_rice', 'food_prices_med', 'sh_livestock', 'income') ~ 'Access',
+      name %in% c('fridge', 'education', 'sh_health_facility', 'diet_nutritive') ~ 'Utilization',
+      name %in% c('sh_transport_cost', 'sh_market_access', 'sh_freq_vio_events', 'sh_mobile_phone') ~ 'Transversal')),
+  "Potential", "Availability", "Access", "Utilization", "Transversal"),
+  category = case_when(
+    dimension %in% c("Potential", "Availability") ~ "Production",
+    dimension %in% c("Access", "Utilization") ~ "Consumption",
+    .default = "Transversal"
+  ))
+  
 # estimate the mean value of each indicator at the cluster level
 mean_cluster <- cluster_tree |> 
   rename(cluster = cluster) %>% 
@@ -170,9 +165,12 @@ mean_cluster_list <- lapply(mean_cluster_list, function(df) mutate(df, diff = va
 mean_cluster <- rbindlist(mean_cluster_list) %>% 
     mutate(name = reorder_within(name, diff, cluster))
 
+save(mean_total, mean_cluster_list, mean_cluster, file = here('data', 'value_indicators.RData'))
 ```
 
 ```{r viz_hclust}
+
+hclust_palette <- c('#FC564F', '#FFC000', '#00B050')
 
 # Clusters = 3
 png(file=here('outputs', 'hclust_3.png'),
@@ -182,10 +180,9 @@ require("igraph")
 fviz_dend(data_tree, k = 3,
      cex = .5, # label size
      rect = TRUE,
-     k_colors = "jco"
+     k_colors = hclust_palette
 )
 dev.off()
-
 ```
 
 ```{r viz_profiles}
@@ -194,10 +191,10 @@ palette_dim <- c('#005DB9', '#C4EAFF', '#7030A0', '#EFE5F7')
 palette_cat <- c('#005DB9', '#7030A0')
 
 ggplot(mean_cluster) +
-    geom_bar(aes(x =name, y = diff, fill = dimension), 
+    geom_bar(aes(x =name, y = diff, fill = category),
              stat = "identity") +
     coord_flip() +
-    scale_fill_manual(values = c('#C4EAFF', '#005DB9', '#7030A0', '#EFE5F7')) +
+    scale_fill_manual(values = c('#005DB9', '#7030A0', '#777378')) +
     labs(x = "Factor", y = "Deviation from average profile") +
     scale_x_reordered() +
     theme_minimal() +
@@ -207,36 +204,39 @@ ggplot(mean_cluster) +
 lapply(mean_cluster_list, function(df) 
   df %>% 
     mutate(name = case_when(
-      name == 'biodiversity_intactness' ~ 'Biodiversité',
-      name == 'water_depletion' ~ 'Appauvrissement en eau',
-      name == 'croplands_2019_netgain' ~ 'Gain net de terres cultivées 2000-2019',
-      name == 'land_pty_dynamics' ~ 'Productivité des sols',
-      name == 'crop_production_pmil' ~ 'Production agricole - millet',
-      name == 'crop_production_vege' ~ 'Production agricole - légumes',
-      name == 'livestock_tlu_avg' ~ 'Unités de bétail tropical (UBT)',
-      name == 'empl_food_processing' ~ 'Emploi agro-alimentaire - Transformation',
-      name == 'dist_to_marketplace' ~  'Distance - Marché',
-      name == 'dist_to_mainroad' ~  'Distance - Route',
-      name == 'price_diff_mean' ~ 'Déviation des prix locaux / moyenne nationale',
-      name == 'auto_conso' ~ 'Auto-consommation',
-      name == 'prod_stock' ~ 'Production agricole stockée',
-      name == 'freq_vio_events' ~ 'Conflits violents',
-      name == 'dist_to_school' ~ 'Distance - Ecole',
-      name == 'healthy_diet' ~ 'Régime alimentaire équilibré',
-      name == 'fridge' ~ 'Frigidaire'
+      name == 'sh_total_precipitation' ~ 'Precipitation',
+      name == 'sh_built_up_change' ~ 'Land use - Built-up change',
+      name == 'water_depletion_ratio' ~ 'Water depletion',
+      name == 'biodiversity_intactness_index' ~ 'Ecosystem services less',
+      name == 'sh_landless' ~ 'Land rights - Landless households',
+      name == 'sh_input_from_market' ~ 'Input market access',
+      name == 'empl_food_processing' ~ 'Agri-food supply chain - Processing jobs',
+      name == 'sh_credit_access' ~ 'Access to credit',
+      name == 'sh_imp_rice' ~  'Trade - Imported rice',
+      name == 'food_prices_med' ~  'Local food prices',
+      name == 'sh_livestock' ~ 'Assets - Livestock',
+      name == 'income' ~ 'Income - Relative poverty',
+      name == 'fridge' ~ 'Food safety - Fridge ownership',
+      name == 'education' ~ 'Intra-HH allocation - Women education',
+      name == 'sh_health_facility' ~ 'Access to Basic services - Health',
+      name == 'diet_nutritive' ~ 'Cooking habits - Lack of a nutritive diet',
+      name == 'sh_transport_cost' ~ 'Transport costs',
+      name == 'sh_market_access' ~ 'Market access',
+      name == 'sh_freq_vio_events' ~ 'Violent events',
+      name == 'sh_mobile_phone' ~ 'ICT - Mobile phone access'
     )) %>% 
   ggplot() +
-    geom_bar(aes(x = reorder(name, diff), y = diff, fill = dimension), 
+    geom_bar(aes(x = reorder(name, diff), y = diff, fill = category), 
              stat = "identity") +
     coord_flip() +
-    scale_fill_manual(values = c('#C4EAFF', '#005DB9', '#7030A0', '#EFE5F7')) +
-    labs(x = "Indicateurs", y = '') +
+    scale_fill_manual(values = c('#005DB9', '#7030A0', '#777378')) +
+    labs(x = "Enabling/Constraining factors", y = '', fill = 'Food Security dimension') +
     theme_minimal()
-  )
+)
 ```
 
 ```{r spatial_cluster}
-
+load(here('data', 'hca_results.RData'))
 load(here('data', 'grappes.RData'))
 
 merge_cluster_to_grappe <- cluster_tree |> 
@@ -253,7 +253,7 @@ grappe_cluster_sf <- merge_cluster_to_grappe |>
   st_as_sf()
 
 st_write(grappe_cluster_sf, here('layers', 'grappe_cluster.gpkg'), delete_layer = TRUE)
-save(grappe_cluster_sf, file = here('data','cluster_data.RData'))
+save(merge_cluster_to_grappe, grappe_cluster_sf, file = here('data','cluster_data.RData'))
 ```
 
 ```{r population_proportion}
@@ -288,20 +288,5 @@ cluster_idm2 <- survey_design %>%
   select(-vartype) %>% 
   pivot_wider(names_from = cluster, values_from = c(pct, pct_se), values_fill = 0) %>% 
   select(-c(starts_with("pct_se")))
-
-```
-
-```{r voronoi}
-
-load(here('data','cluster_data.RData'))
-
-# qgis_get_argument_specs("qgis:voronoipolygons")
-result <- qgis_run_algorithm("qgis:voronoipolygons",
-                             INPUT = grappe_cluster_sf,
-                             BUFFER = 70,
-                             OUTPUT = here('data', 'voronoi_cluster.gpkg')
-)
-
-st_write(voronoi_cluster, here('layers', 'voronoi_cluster.gpkg'), delete_layer = TRUE)
 
 ```

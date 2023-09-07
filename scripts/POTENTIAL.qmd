@@ -1,0 +1,153 @@
+---
+title: "Precipitation 2010-2019"
+format: html
+editor: visual
+---
+
+```{r grappe}
+
+load(here('data', 'grappes.RData'))
+
+```
+
+# Precipitation
+
+**Source**: [Historical monthly weather data --- WorldClim 1 documentation](https://www.worldclim.org/data/monthlywth.html) **Spatial Reference:** GCS_WGS_1984
+
+```{r total_precipitation}
+load(here('data', 'grappe_gps.RData')) # elevation var
+
+rast_total_precipitation <- terra::rast(here('data_raw', 'rasters', 'total_precipitation', 'Total_precipitation.tif'))
+
+# terra::crs(rast_total_precipitation)
+
+total_precipitation_buffer <- rast_total_precipitation %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  summarize(total_precipitation = sum(value * coverage_fraction), .by = id) %>% 
+  mutate(sh_total_precipitation = total_precipitation / sum(total_precipitation) * 100)
+
+# merge 
+total_precipitation <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(total_precipitation_buffer, by = "id")
+
+# save
+save(total_precipitation, file = here('data', 'total_precipitation.RData'))
+st_write(total_precipitation, here('layers', 'total_precipitation.gpkg'), delete_layer = TRUE)
+
+```
+
+# Land use
+
+**source**: Global Land Cover and Land Use Change, 2000-2020 \| GLAD (umd.edu)
+
+```{r land_use}
+
+Change_20N_000E <- terra::rast(here('data_raw', 'rasters', 'built_up_change_2000_2020', 'Change_20N_000E.tif')) %>% 
+  clamp(lower = 1, upper=1, value=FALSE) %>% 
+  aggregate(fact = 2)
+Change_20N_010E <- terra::rast(here('data_raw', 'rasters', 'built_up_change_2000_2020', 'Change_20N_010E.tif')) %>% 
+  clamp(lower = 1, upper=1, value=FALSE) %>% 
+  aggregate(fact = 2)
+Change_30N_000E <- terra::rast(here('data_raw', 'rasters', 'built_up_change_2000_2020', 'Change_30N_000E.tif')) %>% 
+  clamp(lower = 1, upper=1, value=FALSE) %>% 
+  aggregate(fact = 2)
+Change_30N_010E <- terra::rast(here('data_raw', 'rasters', 'built_up_change_2000_2020', 'Change_30N_010E.tif')) %>% 
+  clamp(lower = 1, upper=1, value=FALSE) %>% 
+  aggregate(fact = 2)
+
+# terra::crs(Change_20N_000E)
+
+s <- sprc(Change_20N_000E, Change_20N_010E, Change_30N_000E, Change_30N_010E)
+rast_built_up_change <- merge(s)
+
+# select built up expansion cells only
+# aggregate at buffer level
+# estimate ratio between buffer expansion and total expansion
+built_up_change_buffer <- rast_built_up_change %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  filter(value == 1) %>% 
+  summarize(built_up_change = sum(coverage_fraction, na.rm = TRUE), .by = id) %>% 
+  mutate(sh_built_up_change = built_up_change / sum(built_up_change, na.rm = TRUE) * 100)
+
+# merge 
+built_up_change <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(built_up_change_buffer, by = "id") %>% 
+  mutate(sh_built_up_change = replace_na(sh_built_up_change, 0))
+
+save(Change_20N_000E, Change_20N_010E, Change_30N_000E, Change_30N_010E,
+     rast_built_up_change, built_up_change_buffer, built_up_change, 
+     file = here('data', 'built_up_change.RData'))
+st_write(built_up_change, here('layers', 'built_up_change.gpkg'), 
+         delete_layer = TRUE)
+writeRaster(rast_built_up_change, here('layers', 'rast_built_up_change.tif'), 
+            overwrite=TRUE)
+
+```
+
+# Water depletion
+
+**source**: Water Depletion and WaterGap3 Basins - EarthStat
+
+```{r water}
+
+rast_water_depletion <- terra::rast(here('data_raw', 'rasters', 'water_depletion', 'WaterDepletionCat_WG3.tif'))
+
+# terra::crs(rast_water_depletion)
+
+# estimate weighted mean of water depletion rate for each buffer
+water_depletion_buffer <- rast_water_depletion %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>% 
+  mutate(value_pct = case_when(
+    value == 1 ~ 0,
+    value == 2 ~ 5,
+    value == 5 ~ 25,
+    value == 6 ~ 50,
+    value == 7 ~ 75,
+    value == 8 ~ 100
+  )) %>%
+  summarize(water_depletion_ratio = sum(value_pct * coverage_fraction)/length(id), .by = id)
+
+# merge 
+water_depletion <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(water_depletion_buffer, by = "id")
+
+# save
+save(water_depletion, file = here('data', 'water_depletion.RData'))
+st_write(water_depletion, here('layers', 'water_depletion.gpkg'), delete_layer = TRUE)
+writeRaster(rast_water_depletion, here('layers', 'rast_water_depletion.tif'), 
+            overwrite=TRUE)
+
+```
+
+# Biodiversity intactness
+
+**source**: What is the Biodiversity Intactness Index? \| Natural History Museum (nhm.ac.uk)
+
+```{r biodiversity}
+
+rast_biodiversity_intactness <- terra::rast(here('data_raw', 'rasters', 'biodiversity_intactness', 'Biodiversity_intactness_index.tif'))
+
+# terra::crs(rast_biodiversity_intactness)
+
+# estimate weighted mean of biodiversity intactness rate for each buffer
+biodiversity_intactness_buffer <- rast_biodiversity_intactness %>% 
+  exactextractr::exact_extract(grappe_buffer) %>% 
+  rbindlist(idcol = "id") %>%
+  summarize(biodiversity_intactness_index = sum(value * coverage_fraction,na.rm = T)/length(id), .by = id)
+
+# merge 
+biodiversity_intactness <- grappe_sf |> 
+  rowid_to_column(var = "id") |> 
+  left_join(biodiversity_intactness_buffer, by = "id") 
+
+# save
+save(biodiversity_intactness, file = here('data', 'biodiversity_intactness.RData'))
+st_write(biodiversity_intactness, here('layers', 'biodiversity_intactness.gpkg'), delete_layer = TRUE)
+
+```

@@ -1,0 +1,406 @@
+---
+title: "Precipitation 2010-2019"
+format: html
+editor: visual
+---
+
+```{r grappe}
+
+load(here('data','grappes.RData'))
+
+```
+
+# Land rights
+
+**source**: EHCVM 2018-2019
+
+```{r land_rights}
+load(here('data','short_survey.RData'))
+
+s16a_me_agric <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's16a_me_ner2018.dta')) # Section 16: Agriculture
+
+s16a_data <- s16a_me_agric %>% 
+  select(vague, grappe, menage, 
+         superf_parc = s16aq09a,
+         unit_superf = s16aq09b,
+         mode_occup = s16aq10
+         )
+
+landless <- left_join(s16a_data, survey_welfare %>% select(grappe, menage, hhid),
+             by = c('grappe', 'menage')) %>% # join to grappe hhid
+  mutate(superficie_ha = if_else(unit_superf == 2, superf_parc/10000, superf_parc), # convert m^2 to Ha
+         superficie_ha = if_else(is.na(superficie_ha), 0, superficie_ha), # rm NAs
+         mode_occup = as_factor(mode_occup)) %>%
+  reframe(hh_total_superf = sum(superficie_ha, na.rm = TRUE), # total cultivated area per HH
+         .by = c(grappe, hhid, mode_occup)) %>% 
+  reframe(landless = if_else(hh_total_superf < 1 | mode_occup != 'Propriétaire', 1, 0),
+          .by = c(hhid, grappe)) %>% # landless HH (i) < 1 ha of total cultivated land OR (ii) do not own any cultivated land
+  reframe(sh_landless = sum(landless) / length(hhid) * 100, .by = grappe)
+         
+# merge
+landless <- left_join(grappe_sf, landless, by = 'grappe') %>% 
+  mutate(sh_landless = replace_na(sh_landless, 100))
+
+# save
+save(landless, file = here('data', 'landless.RData'))
+st_write(landless, here('layers', 'landless.gpkg'), delete_layer = TRUE)
+
+```
+
+# Input markets
+
+**source**: EHCVM 2018-2019
+
+```{r input_market}
+
+s16b_me_agric <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's16b_me_ner2018.dta')) # Section 16: Agriculture
+
+s16b_data <- s16b_me_agric %>% 
+  select(grappe, menage,
+         input_type = s16bq01,
+         input_use = s16bq02,
+         input_source = s16bq04)
+
+# create var input category & rename input_source var
+s16b_data <- s16b_data %>% 
+  mutate(input_cat = case_when(
+    input_type %in% 1:2 ~ 'fertilizer_org',
+    input_type %in% 3:6 ~ 'fertilizer_norg',
+    input_type %in% 7:10 ~ 'phyto',
+    input_type %in% 11:19 ~ 'seed',
+    .default = 'other'),
+    input_source = case_when(
+      input_source == 1 ~ 'cooperative',
+      input_source == 2 ~ 'market_shop',
+      input_source == 3 ~ 'auto_prod',
+      input_source == 4 ~ 'soc_network',
+      input_source == 5 ~ 'cattle',
+      input_source == 6 ~ 'state',
+      input_source == 7 ~ 'grain_bank',
+      input_source == 8 ~ 'other'
+  ))
+
+table(s16b_data$input_cat, s16b_data$input_source)
+
+# join to grappe hhid
+input_market <- left_join(s16b_data, survey_welfare %>% select(grappe, menage, hhid),
+             by = c('grappe', 'menage'))
+# create input_from_market var & group by hhid
+input_market <- input_market %>% 
+  reframe(input_from_market = if_else(input_source == 'market_shop', 1, 0), 
+          .by = c(hhid, grappe)) %>%
+  group_by(hhid, grappe) %>% 
+  slice_max(input_from_market, with_ties = FALSE) %>% 
+  ungroup()
+# create sh_input_from_market var
+input_market <- input_market %>% 
+  reframe(sh_input_from_market = sum(input_from_market) / length(hhid) * 100, .by = grappe)
+  
+# merge
+input_market <- left_join(grappe_sf, input_market, by = 'grappe') %>% 
+  mutate(sh_input_from_market = replace_na(sh_input_from_market, 0))
+
+# save
+save(input_market, file = here('data', 'input_market.RData'))
+st_write(input_market, here('layers', 'input_market.gpkg'), delete_layer = TRUE)
+
+```
+
+|     |                        |
+|-----|------------------------|
+| 1   | Coopérative            |
+| 2   | Marché/Boutique        |
+| 3   | Autoproduction         |
+| 4   | Autre paysan ou ménage |
+| 5   | Animaux dans le champ  |
+| 6   | Structure Etatique     |
+| 7   | Banque céréalière      |
+| 8   | Autre                  |
+
+# Agri-food supply chain
+
+**source**: EHCVM 2018-2019
+
+```{r food_supply_chain}
+
+load(here('data','short_survey.RData'))
+
+# load survey data on employment
+s04_me_employment <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's04_me_ner2018.dta'))
+s04_co_employment <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's04_co_ner2018.dta'))
+
+# 1. Create a typology of food employment, cf. Allen et al. (2018)
+food_employment <- s04_me_employment %>% 
+  select(vague, grappe, menage, 
+         id_ind = s01q00a, # id ind
+         main_empl = s04q28a, # primary job
+         month_main_empl = s04q32, # prim. job - total months worked
+         day_main_empl = s04q36, # prim. job - days per month worked
+         hour_main_empl = s04q37, # prim. job - hours per day worked
+         starts_with("s04q29"), # prim. job - job category
+         starts_with("s04q30"), # prim. job - activity category
+         sec_empl = s04q28b, # secondary job
+         month_sec_empl = s04q54, # sec. job - total months worked
+         day_sec_empl = s04q55, # sec. job - days per month worked 
+         hour_sec_empl = s04q56, # sec. job - hours per day worked 
+         starts_with("s04q51"), # prim. job - job category
+         starts_with("s04q52") # prim. job - activity category
+  ) %>% 
+  mutate(
+    main_empl = as_factor(main_empl),
+    across(starts_with("s04q29"), as_factor),
+    across(starts_with("s04q30"), as_factor),
+    across(starts_with("s04q51"), as_factor),
+    across(starts_with("s04q52"), as_factor)
+  ) %>% 
+  rename(
+    prim_code_emploi = s04q29b,
+    prim_code_prof = s04q29d,
+    prim_code_section = s04q30b,
+    prim_branche_activite = s04q30c,
+    prim_code_activite = s04q30d,
+    sec_code_emploi = s04q51b,
+    sec_code_prof = s04q51d,
+    sec_code_section = s04q52b,    
+    sec_branche_activite = s04q52c,
+    sec_code_activite = s04q52d,
+  ) %>% 
+  mutate(prim_food_empl = as_factor(case_when(
+    # food agriculture
+    prim_code_prof %in% c("éleveur de bétail", "Maraîcher", "Cultivateur") ~ "Food agriculture",
+    prim_code_section == "Agriculture, pêche, foresterie" ~ "Food agriculture",
+    prim_branche_activite %in% c("Agriculture vivrière et activités annexes", "Agriculture industrielle et d'exportation", "Sylviculture, exploitation forestière, activités annexes", "Elevage et chasse") ~ "Food agriculture",
+    # food processing
+    prim_branche_activite == "Fabrication de produits alimentaires et de boissons" ~ "Food processing",
+    # food marketing
+    prim_branche_activite == "Commerce de gros et activités d'intermédiaires du commerce de gros" & prim_code_activite == "Commerce de gros de produits agricoles bruts, d'animaux vivants, de produits alimentaires, boissons et tabacs" ~ "Food marketing",
+    prim_code_activite %in% c("Commerce de détail de fruits et légumes", "Commerce de détail d’autres produits alimentaires", "Commerce de détail général (alimentation, boutique, épicerie, …)") ~ "Food marketing",
+    prim_branche_activite == "Transports terrestres, transport par conduites" ~ "Food marketing",
+    prim_code_emploi == "AGRICULTEURS ET OUVRIERS QUALIFIES DE L'AGRICULTURE ET LA PECHE" & prim_code_activite == "Commerce de détail d’autres produits (y compris activités d’intermédiaire du commerce de détail)" ~ "Food marketing",
+    # food away-from-home
+    prim_branche_activite == "Hôtels et restaurants" ~ "Food away-from-home",
+    .default = "Other"
+  )),
+  sec_food_empl = as_factor(case_when(
+    # food agriculture
+    sec_code_prof %in% c("ouvrier qualifié de l'agriculture", "autres agriculteurs et ouvriers qualifies de l'agriculture et la peche non classé ailleurs", "Cultivateur", "éleveur de bétail", "Maraîcher", "Ouvrier, manœuvre agricole") ~ "Food agriculture",
+    sec_code_section == "Agriculture, pêche, foresterie" ~ "Food agriculture",
+    sec_branche_activite %in% c("Agriculture vivrière et activités annexes", "Agriculture industrielle et d'exportation", "Sylviculture, exploitation forestière, activités annexes", "Elevage et chasse") ~ "Food agriculture",
+    sec_code_emploi %in% c("éleveur de bétail", "Maraîcher", "Cultivateur") ~ "Food agriculture",
+    # food processing
+    sec_branche_activite == "Fabrication de produits alimentaires et de boissons" ~ "Food processing",
+    # food marketing
+    sec_branche_activite == "Commerce de gros et activités d'intermédiaires du commerce de gros" & sec_code_activite == "Commerce de gros de produits agricoles bruts, d'animaux vivants, de produits alimentaires, boissons et tabacs" ~ "Food marketing",
+    sec_code_activite %in% c("Commerce de détail de fruits et légumes", "Commerce de détail d’autres produits alimentaires", "Commerce de détail général (alimentation, boutique, épicerie, …)") ~ "Food marketing",
+    sec_branche_activite == "Transports terrestres, transport par conduites" ~ "Food marketing",
+    sec_code_emploi %in% c("AGRICULTEURS ET OUVRIERS QUALIFIES DE L'AGRICULTURE ET LA PECHE", "Ouvrier, manœuvre agricole") & sec_code_activite == "Commerce de détail d’autres produits (y compris activités d’intermédiaire du commerce de détail)" ~ "Food marketing",
+    sec_code_prof %in% c("vendeur de fruits", "vendeur de céréales", "vendeur de vivres frais (alloco, igname, taro, autres féculents)", "vendeur de légumes et arachides et tous condiments", "Boucher - vendeur", "Docker") ~ "Food marketing",
+    # food away-from-home
+    sec_branche_activite == "Hôtels et restaurants" ~ "Food away-from-home",
+    sec_code_prof %in% c("vendeur de beignets et d'autres aliments préparés (vendeur d'aliments)") ~ "Food away-from-home",
+    .default = "Other"
+  ))
+  ) %>% 
+  relocate(c("prim_food_empl", "sec_food_empl"))
+
+# 2. Convert time worked in Full-time equivalent (FTE)
+food_fte <- food_employment %>% 
+  right_join(survey_ind %>% select(vague, grappe, menage, id_ind = numind, hhid, sexe, age), by =c("vague", "grappe", "menage", "id_ind")) %>% 
+  mutate( # create full-time equivalent variable
+    fte_prim = (hour_main_empl*day_main_empl*month_main_empl)/(40*52),
+    fte_sec = (hour_sec_empl*day_sec_empl*month_sec_empl)/(40*52),
+    fte_agriculture = case_when(
+      prim_food_empl == "Food agriculture" ~ fte_prim,
+      sec_food_empl == "Food agriculture" ~ fte_sec,
+      .default = 0),
+    fte_processing = case_when(
+      prim_food_empl == "Food processing" ~ fte_prim,
+      sec_food_empl == "Food processing" ~ fte_sec,
+      .default = 0),
+    fte_marketing = case_when(
+      prim_food_empl == "Food marketing" ~ fte_prim,
+      sec_food_empl == "Food marketing" ~ fte_sec,
+      .default = 0),          
+    fte_away_home = case_when(
+      prim_food_empl == "Food away-from-home" ~ fte_prim,
+      sec_food_empl == "Food away-from-home" ~ fte_sec,
+      .default = 0)
+  ) %>% 
+  group_by(hhid) %>% 
+  summarize(
+    fte_agriculture = sum(fte_agriculture, na.rm = TRUE),
+    fte_processing = sum(fte_processing, na.rm = TRUE),
+    fte_marketing = sum(fte_marketing, na.rm = TRUE),
+    fte_away_home = sum(fte_away_home, na.rm = TRUE)
+  ) %>% 
+  rowwise() %>% 
+  mutate(fte_total = sum(c(fte_agriculture, fte_processing, fte_marketing, fte_away_home))) %>% 
+  ungroup()
+
+# Group by grappe/EAs 
+food_supply_chain_by_grappe <- left_join(survey_welfare %>% select(hhid, grappe), food_fte, by = 'hhid') %>% 
+  group_by(grappe) |>
+  summarize(
+    empl_food_agriculture = 100 * sum(fte_agriculture)/sum(fte_total), 
+    empl_food_processing = 100 * sum(fte_processing)/sum(fte_total),
+    empl_food_marketing = 100 * sum(fte_marketing)/sum(fte_total),
+    empl_food_away_home = 100 * sum(fte_away_home)/sum(fte_total)
+  )
+
+# merge
+food_supply_chain <- left_join(grappe_sf, food_supply_chain_by_grappe, by = 'grappe')
+
+# save data
+save(food_supply_chain, file = here('data', 'food_supply_chain.RData'))
+st_write(food_supply_chain, here('layers', 'food_supply_chain.gpkg'), delete_layer = TRUE)
+
+```
+
+# Storage
+
+**source**: EHCVM 2018-2019
+
+```{r prod_stock}
+
+# import survey data
+s16a_me_agric <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's16a_me_ner2018.dta'))
+s16c_me_agric <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's16c_me_ner2018.dta'))
+
+# prepare the dataset
+s16c_data <- s16c_me_agric %>% select(grappe, menage,
+                                  methd_stockage = s16cq20,
+                                  alrdy_stock = s16cq21,
+                                  alrdy_sold = s16cq15,
+                                  qte_conso = s16cq13a,
+                                  qte_sold = s16cq16a,
+                                  qte_stock = s16cq22a)
+
+# create sh_prod_in_stock
+stock_prod <- s16c_data %>% 
+  mutate(qte_stock = if_else(alrdy_stock == 2, 0, qte_stock),
+         qte_sold = if_else(alrdy_sold == 2, 0, qte_sold),
+         qte_total = qte_conso + qte_sold + qte_stock) %>% 
+  summarize(qte_stock = sum(qte_stock),
+            qte_total = sum(qte_total),
+            prod_stock = 100 * (qte_stock / qte_total),
+            .by = grappe
+  )
+
+stock_prod <- left_join(grappe_sf, stock_prod, by = 'grappe') %>% 
+  replace_na(list(qte_stock = 0, qte_total = 0, prod_stock = 0))
+
+save(stock_prod, file = here('data', 'stock_prod.RData'))
+st_write(stock_prod, here('layers', 'stock_prod.gpkg'), delete_layer = TRUE)
+
+```
+
+# Credit systems
+
+**source**: EHCVM 2018-2019
+
+```{r}
+
+# import survey data
+individu_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_individu_ner2018.dta'))
+s06_me_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's06_me_ner2018.dta'))
+
+# prepare datasets
+ind_data <- individu_ner2018 %>% 
+  select(hhid, grappe, menage, numind, age)
+
+s06_data <- s06_me_ner2018 %>% 
+  select(grappe, menage, numind = s01q00a, credit_access = s06q05) 
+  
+# create sh_credit_access by grappe
+credit_by_grappe <- left_join(ind_data, s06_data, 
+                              by = c('grappe', 'menage', 'numind')) %>% 
+  filter(age %in% c(15:64)) %>% 
+  mutate(credit_access = if_else(is.na(credit_access), 2, credit_access)) %>% 
+  group_by(grappe, credit_access) %>% 
+  tally() %>% 
+  mutate(sh_credit_access = 100 * n / sum(n)) %>% 
+  filter(credit_access == 1)
+
+# merge
+credit <- left_join(grappe_sf, credit_by_grappe, by = 'grappe') %>% 
+  select(-c(credit_access, n)) %>% 
+  mutate(sh_credit_access = replace_na(sh_credit_access, 0))
+
+# save
+save(credit, file = here('data', 'credit.RData'))
+st_write(credit, here('layers', 'credit.gpkg'), delete_layer = TRUE)
+
+```
+
+# Transport costs
+
+**source**: EHCVM 2018-2019
+
+```{r transport_cost}
+
+# import survey data
+ehcvm_conso_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_conso_ner2018.dta'))
+
+# prepare dataset
+ehcvm_conso_agg <- ehcvm_conso_ner2018 %>% 
+  select(hhid, vague, grappe, menage, codpr, depan)
+
+transport_exp_by_grappe <- ehcvm_conso_agg %>% 
+  mutate(codpr_transport = if_else(
+    codpr %in% c(210:215, 405:407, 629), 1, 0)) %>%
+  mutate(depan_total = sum(depan), .by = hhid) %>% 
+  reframe(exp = sum(depan), .by = c(hhid, grappe, depan_total, codpr_transport)) %>% 
+  mutate(transport_exp_pct = 100 * exp / depan_total)
+
+# create sh_transport_cost var by grappe
+transport_cost_by_grappe <- transport_exp_by_grappe %>% 
+  filter(codpr_transport ==  1) %>% 
+  summarize(sh_transport_exp = mean(transport_exp_pct, na.rm = T), .by = grappe)
+
+# merge
+transport_cost <- left_join(grappe_sf, transport_cost_by_grappe, by = 'grappe') %>% 
+  mutate(sh_transport_exp = replace_na(sh_transport_exp, 0))
+
+# save
+save(transport_cost, file = here('data', 'transport_cost.RData'))
+st_write(transport_cost, here('layers', 'transport_cost.gpkg'), delete_layer = TRUE)
+
+```
+
+# Market access
+
+**source**: OSM
+
+```{r}
+
+# extract data from osm
+osm_marketplace <- opq(bbox = c(-0.549316,10.703792,16.589355,24.086589), # source: http://bboxfinder.com/
+                       timeout = 100) %>% 
+  add_osm_feature(key = 'amenity', value = 'marketplace') %>% 
+  osmdata_sf()
+
+# prepare dataset
+marketplace_points <- osm_marketplace$osm_points %>%
+  select(osm_id, name, amenity)
+
+# length(marketplace_points$osm_id)
+
+# aggregate by buffer
+marketplace_buffer <- st_join(grappe_buffer, marketplace_points) %>% 
+  summarize(freq_market_access = length(osm_id), .by = grappe) %>% 
+  st_drop_geometry()
+
+# merge
+marketplace <- merge(grappe_sf, marketplace_buffer, by = 'grappe') %>% 
+  mutate(sh_market_access = 100 * freq_market_access / 3466)
+  
+# save
+save(osm_marketplace, marketplace_buffer, marketplace,
+     file = here('data', 'marketplace.RData'))
+st_write(marketplace, here('layers', 'marketplace.gpkg'), delete_layer = TRUE)
+
+```
+
+# 
+
+#### 

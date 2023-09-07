@@ -1,0 +1,126 @@
+---
+title: "Enabling/Constraining factors: Access"
+format: html
+editor: visual
+---
+
+```{r grappe}
+
+load(here('data','grappes.RData'))
+
+```
+
+# Food safety
+
+**source**: EHCVM 2018-2019
+
+```{r food_safety}
+
+# load survey data
+ehcvm_menage_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_menage_ner2018.dta'))
+survey_welfare <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_welfare_ner2018.dta'))
+
+# prepare dataset
+menage_data <- ehcvm_menage_ner2018 %>%
+  select(hhid, frigo) %>% 
+  left_join(survey_welfare %>% select(grappe, hhid), by = 'hhid')
+
+# create food_safety var by grappe
+food_safety_by_grappe <- summarize(menage_data, fridge = 100 * sum(frigo) / length(frigo),
+                                   .by = grappe)
+
+# merge
+food_safety <- left_join(grappe_sf, food_safety_by_grappe, by = 'grappe')
+
+# save
+save(food_safety, file = here('data', 'food_safety.RData'))
+st_write(food_safety, here('layers', 'food_safety.gpkg'), delete_layer = TRUE)
+
+```
+
+# Education / Intra-HH allocation
+
+**source**: EHCVM 2018-2019
+
+```{r education}
+
+# load survey data
+ehcvm_individu_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_individu_ner2018.dta'))
+
+# prepare dataset
+ind_data <- ehcvm_individu_ner2018 %>% 
+  select(hhid, grappe, numind, sexe, age, alfab) %>% 
+  filter(age %in% c(15:64) & sexe == 2) # working-age women population
+  
+# create education var by grappe
+education_by_grappe <- summarize(ind_data, education = 100 * sum(alfab, na.rm = T) / 
+                                   length(alfab),
+                                   .by = grappe)
+
+# merge
+education <- left_join(grappe_sf, education_by_grappe, by = 'grappe')
+
+# save
+save(education, file = here('data', 'education.RData'))
+st_write(education, here('layers', 'education.gpkg'), delete_layer = TRUE)
+
+```
+
+# Access to health services
+
+**source**: OSM
+
+```{r health}
+
+# load osm data
+osm_health_facility_points <- st_read(here('data', 'health_facility.gpkg'))
+
+# aggregate by buffer
+health_facility_by_buffer <- st_join(grappe_buffer, osm_health_facility_points) %>% 
+  summarize(freq_health_facility = length(osm_id), .by = grappe) %>% 
+  st_drop_geometry()
+
+# length(health_facility_points$osm_id)
+
+# merge
+health_facility <- merge(grappe_sf, health_facility_by_buffer, by = 'grappe') %>% 
+  mutate(sh_health_facility = 100 * freq_health_facility / 427)
+  
+# save
+save(osm_health_facility_points, health_facility_by_buffer, health_facility,
+     file = here('data', 'health_facility.RData'))
+st_write(health_facility, here('layers', 'health_facility.gpkg'), delete_layer = TRUE)
+
+```
+
+# Diet / Cooking habits
+
+**source**: EHCVM 2018-2019
+
+```{r}
+
+# load survey data
+s08a_me_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's08a_me_ner2018.dta'))
+survey_welfare <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_welfare_ner2018.dta'))
+
+# prepare dataset
+s08a_data <- s08a_me_ner2018 %>%
+  select(grappe, menage, diet_nutr = s08aq02, diet_div = s08aq03) %>% 
+  mutate(diet_nutr = if_else(diet_nutr != 1, 0, diet_nutr),
+         diet_div = if_else(diet_div != 1, 0, diet_div))
+
+# create diet var by grappe
+diet_by_grappe <- summarize(s08a_data, 
+                                 diet_nutritive = 100 * sum(diet_nutr, na.rm = T) / length(diet_nutr),
+                                 diet_diversified = 100 * sum(diet_div, na.rm = T) / length(diet_div),
+                                 .by = grappe)
+
+# merge
+diet <- left_join(grappe_sf, diet_by_grappe, by = 'grappe')
+
+# save
+save(diet, file = here('data', 'diet.RData'))
+st_write(diet, here('layers', 'diet.gpkg'), delete_layer = TRUE)
+
+
+```

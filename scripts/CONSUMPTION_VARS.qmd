@@ -13,26 +13,23 @@ load(here('data', 'grappe_gps.RData'))
 
 ```{r access}
 
-load(here('data', 'price_market.RData')) # food prices at local markets
-load(here('data', 'distance_to_facility.RData')) # road distance to closest market, main road, and school
-load(here('data', 'livestock.RData')) # livestock assets (tropical livestock unit)
-load(here('data', 'poverty.RData')) # share of households under the national poverty line
-load(here('data', 'freq_vio_events.RData')) # frequency of violent events
-load(here('data', 'agri_activity.RData')) # agro-pastoral activities
-load(here('data', 'asset.RData')) # car
+load(here('data', 'trade.RData')) 
+load(here('data', 'food_price.RData')) 
+load(here('data', 'livestock.RData')) 
+load(here('data', 'income.RData')) 
 
-access <- left_join(price_market_by_grappe %>% 
-            select(grappe, price_diff_mean, price_diff_median, 
-                   price_change_season_mean, price_change_season_median),
-          distance_to_facility %>% select(-dist_to_school),
-          by = 'grappe'
-          ) %>% 
-  left_join(livestock_by_grappe, by = 'grappe') %>% 
-  left_join(poverty_by_grappe, by = 'grappe') %>% 
-  left_join(freq_vio_events_by_grappe, by = 'grappe') %>%
-    replace_na(list(fatalities = 0, freq_vio_events = 0)) %>% 
-  left_join(agri_activity_by_grappe, by = 'grappe') %>% 
-  left_join(asset_by_grappe %>% select(grappe, car), by = 'grappe')
+access <- left_join(trade %>% select(grappe, sh_imp_rice),
+                    food_price %>% st_drop_geometry() %>% 
+                      select(grappe, food_prices_avg, food_prices_med),
+                    by = 'grappe') %>% 
+  left_join(livestock %>% st_drop_geometry() %>% 
+              select(grappe, sh_livestock),
+            by = 'grappe') %>% 
+  left_join(income %>% st_drop_geometry() %>% 
+              select(grappe, income),
+            by = 'grappe')
+            
+vis_miss(access)
   
 ```
 
@@ -40,19 +37,30 @@ access <- left_join(price_market_by_grappe %>%
 
 ```{r utilization}
 
-load(here('data', 'diet.RData')) # healthy and varied diet
-load(here('data', 'asset.RData')) # fridge, cooking stove, waste system
-load(here('data', 'road_distance.RData')) # road distance to closest market, main road, and school
+load(here('data', 'food_safety.RData'))
+load(here('data', 'education.RData'))
+load(here('data', 'health_facility.RData'))
+load(here('data', 'diet.RData'))
 
-utilization <- left_join(diet_by_grappe, distance_to_facility %>% 
-                           select(grappe, dist_to_school), by = 'grappe') %>% 
-    left_join(asset_by_grappe %>% select(grappe, fridge, cooking_stove, waste), by = 'grappe')
+utilization <- left_join(food_safety %>%
+                           select(grappe, fridge),
+                         education %>% st_drop_geometry() %>% 
+                           select(grappe, education),
+                         by = 'grappe') %>% 
+  left_join(health_facility %>% st_drop_geometry() %>% 
+              select(grappe, sh_health_facility),
+            by = 'grappe') %>% 
+  left_join(diet %>% st_drop_geometry() %>% 
+              select(grappe, diet_nutritive, diet_diversified),
+            by = 'grappe')
+  
+vis_miss(utilization)
 
 ```
 
 ```{r consumption}
 
-consumption <- left_join(access, utilization, by = 'grappe')
+consumption <- left_join(access, utilization %>% st_drop_geometry(), by = 'grappe')
 
 save(consumption, file = here('data', 'consumption.RData'))
 

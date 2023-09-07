@@ -1,19 +1,17 @@
 source(here::here('scripts', 'library.R'))
 
+# load osm data
 hotosm_niger_roads <- st_read(here('data_raw', 'hotosm_niger_roads_gpkg', 'hotosm_niger_roads.gpkg'))
 
+# prepare the dataset
 ner_mainroad_lines <- st_cast(hotosm_niger_roads, "LINESTRING") %>% 
-  filter(highway %in% c('trunk', 'trunk_link', 'primary_link', 'primary', 'secondary_link', 'secondary', 'tertiary_link', 'tertiary')) %>% 
-  mutate(max_speed = case_when( # Add a speed variable
-    highway %in% c('trunk', 'primary_link', 'primary') ~ 110,
-    highway %in% c('secondary_link', 'secondary') ~ 90,
-    highway %in% c('tertiary_link', 'tertiary') ~ 50
-  ))
+  filter(highway %in% c('trunk', 'trunk_link', 'primary_link', 'primary', 
+                        'secondary_link', 'secondary', 
+                        'tertiary_link', 'tertiary'))
 
-## Pre-processing and cleaning
-# Round coordinates to 4 digits.
+# Pre-processing and cleaning
 st_geometry(ner_mainroad_lines) = st_geometry(ner_mainroad_lines) %>%
-  lapply(function(x) round(x, 4)) %>%
+  lapply(function(x) round(x, 4)) %>% # round coordinates
   st_sfc(crs = st_crs(ner_mainroad_lines))
 
 simple = ner_mainroad_lines %>%
@@ -27,13 +25,16 @@ subdivision = convert(simple, to_spatial_subdivision)
 subdivision_sf = st_as_sf(subdivision)
 st_write(subdivision_sf, here('data', 'subdivision.gpkg'), delete_layer = TRUE)
 
+# save
 st_write(ner_mainroad_lines, here('data', 'ner_mainroad_lines.gpkg'), delete_layer = TRUE)
 save(hotosm_niger_roads, ner_mainroad_lines, file = here('data', 'ner_mainroad_lines.RData'))
 
+
+## Centrality analysis
 edges <- as_sfnetwork(subdivision) # convert to sfnetwork format
 smoothed_nodes <- convert(edges, to_spatial_smooth) # remove pseudo-nodes
 
-# Measure nodes centrality
+# Estimate nodes centrality
 nodes_graph_sf <- smoothed_nodes %>% 
   activate('nodes') %>%
   mutate(centrality_eigen = tidygraph::centrality_eigen(directed = FALSE),
@@ -74,21 +75,20 @@ st_write(nodes_graph_sf, here('data', 'ner_nodes_graph.gpkg'), delete_layer = TR
 
 
 
+highway_trunk_lines <- highway_trunk %>%
+  select(full_id, osm_id, osm_type, highway) %>% 
+  st_cast("LINESTRING")
+  
+net <- weight_streetnet (highway_trunk_lines, wt_profile = "motorcar")
+
+from <- dodgr_to_sf(net) %>% select(from_lon, from_lat) %>% st_drop_geometry()
+to <- dodgr_to_sf(net) %>% select(to_lon, to_lat) %>% st_drop_geometry()
+
+dodgr_dists_nearest(graph = net, from = from, to = to) %>% 
+  rename(distance_nearest = d) %>% 
+  summarize(total_distance = sum(distance_nearest, na.rm = T))
 
 
-
-
-
-
-bb <- getbb("Niger", featuretype = "country")
-ner_dodgr_streetnet_sc <- opq(bbox = bb), timeout = 100) %>% 
-  add_osm_feature(key = 'highway') %>% 
-  osmdata_sc()
-
-bb <- getbb("Niger", featuretype = "country")
-streetnet <- dodgr_streetnet (bbox = bb, quiet = FALSE)
-net <- weight_streetnet (streetnet)
-graph <- net [which (!net$access != "private"), ]
 
 st_write(ner_road_lines, here('data', 'ner_road_lines.gpkg'))
 

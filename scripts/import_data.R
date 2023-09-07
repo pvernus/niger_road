@@ -51,20 +51,23 @@ adm01 <- ner_adm01 %>%
   
 save(ner_adm00, ner_adm01, ner_adm02, ner_adm03, adm02, adm03, file = "data/ner_adm.RData")
 
+
 # Population
-ner_admpop_adm3_2022 <- read_csv(here("data_raw", "ner_admpop_adm3_2022.csv"))
-pop <- ner_admpop_adm3_2022 %>% 
+ner_admpop_adm2_2022 <- read_csv(here("data_raw", "ner_admpop_adm2_2022.csv"))
+
+pop <- ner_admpop_adm2_2022 %>% 
   clean_names() %>% 
   select(-c(year, iso3, adm0_name, adm0_pcode)) %>% # remove unnecessary variables
   mutate(id_adm1 = adm1_pcode, # create primary key
-         id_adm2 = adm2_pcode, # create foreign keys
-         id_adm3 = adm3_pcode
+         id_adm2 = adm2_pcode # create foreign keys
   ) %>% 
   relocate(starts_with("id_"), .before = "f_tl")
 
-pop_sf <- pop %>% 
-  inner_join(adm03 %>% select(adm_03, id_adm3, geometry), by = "id_adm3") %>% 
+pop_adm02_sf <- pop %>% 
+  inner_join(adm02 %>% select(adm_02, id_adm2, geometry), by = "id_adm2") %>% 
   st_as_sf()
+
+save(ner_admpop_adm2_2022, adm02, pop_adm02_sf, file = here('data', 'ner_adm02_pop.RData'))
 
 
 # GRID3

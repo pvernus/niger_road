@@ -151,7 +151,9 @@ survey_design <- svydesign(id = ~ grappe+hhid,
           weights = ~ hhweight, 
           data = survey_welfare, nest = TRUE)
 
-# grappes / EAs
+## Community / Grappes / EAs
+
+load(here("data", "ner_adm.RData"))
 
 grappe_gps_survey <- grappe_gps_ner2018 |> 
   left_join(survey_welfare |> select(grappe, id_adm2, hhweight), by = "grappe") |> 
@@ -165,18 +167,29 @@ grappe_gps <- grappe_gps |>
          x = "coordonnes_gps__Longitude", y = "coordonnes_gps__Latitude")
 
 # transform to sf 
-grappe_sf = st_as_sf(grappe_gps, 
-                     coords = c("x", "y"),
-                     crs = 4326,
-                     agr = "constant")
+grappe_sf <- st_as_sf(grappe_gps, 
+                      coords = c("x", "y"),
+                      crs = 4326,
+                      agr = "constant")
 
-# Buffer
-grappe_buffer <- st_buffer(grappe_sf, dist = 10000) # 10km radius
+grappe_new_crs <- st_transform(grappe_sf, crs = 'EPSG:32631') # transform to crs with unit in meter
+grappe_buffer <- st_buffer(grappe_new_crs, dist = 20000) # 20km buffer
+plot(st_geometry(grappe_buffer))
+grappe_buffer <- st_transform(grappe_buffer, crs = 4326) # convert back to crs:4326
 
-tm_shape(grappe_buffer) +
-  tm_polygons(alpha = 0) +
-  tm_shape(grappe_sf) +
-  tm_symbols(col = "red", size = .1)
+#leaflet::leaflet() %>% 
+#  addTiles() %>% 
+#  addMeasure(primaryLengthUnit = "meters") %>% 
+#  addMarkers(data = grappe_new_crs) %>% 
+#  addPolygons(data = buff)
+
+# save data
+save(grappe_sf, grappe_buffer, 
+     file = here('data', 'grappes.RData'))
+
+st_write(grappe_sf, here('layers', 'grappes.gpkg'), delete_layer = TRUE)
+st_write(grappe_buffer, here('layers', 'grappe_buffer.gpkg'), delete_layer = TRUE)
+
 
 # save data
 save(ehcvm_individu_ner2018, ehcvm_menage_ner2018, ehcvm_welfare_ner2018, 
@@ -577,6 +590,103 @@ agric_c %>%
         legend.position = "bottom")
 
 ggsave("outputs/plot_reason_diff_to_sell.png", width = 40, height = 20, units = "cm")
+
+
+============
+  
+  # load survey data
+  s16c_me_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's16c_me_ner2018.dta'))
+s20_me_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's20_me_ner2018.dta'))
+load(here('data', 'short_survey.RData'))
+load(here('data', 'ner_adm.RData'))
+
+# prepare dataset
+s16c_me <- s16c_me_ner2018 %>%
+  select(vague, grappe, menage, sell_to = s16cq19, diff_to_sell = s16cq28, starts_with('s16cq29')) %>%
+  mutate_at(vars(matches("s16cq29")), as_factor) %>% 
+  mutate(sell_to = as_factor(sell_to),
+         diff_to_sell = as_factor(diff_to_sell)) %>% 
+  pivot_longer(starts_with('s16cq29'), names_to = 'reason_diff_to_sell', values_to = 'rep') %>% 
+  mutate(reason_diff_to_sell = fct_recode(reason_diff_to_sell, 
+                                          'Other' = "s16cq29__7", 
+                                          'Low demand' = "s16cq29__5", 
+                                          'Low market price' = "s16cq29__6",
+                                          'High transport costs' = "s16cq29__3", 
+                                          'Low road quality' = "s16cq29__4", 
+                                          'High distance to road' = "s16cq29__1", 
+                                          'High distance to market' = "s16cq29__2"
+  )) %>% 
+  left_join(survey_welfare %>% select(hhid, id_adm1, id_adm2, vague, grappe, 
+                                      menage, zae, region, milieu, hhweight, hhsize), 
+            by = c("vague", "grappe", "menage")) %>% 
+  left_join(ner_adm01 %>% select(adm1_name = adm_01, id_adm1 = rowcacode1), by = 'id_adm1') %>% 
+  mutate(zae = as_factor(zae),
+         region = str_to_title(as_factor(region)),
+         milieu = str_to_title(as_factor(milieu)))
+
+survey_diff_selling_prod <- s16c_me %>% 
+  as_survey_design(ids = c(grappe,hhid), 
+                   strata = c(region, milieu), 
+                   weights = hhweight,
+                   variables = c(hhid, adm1_name, sell_to, diff_to_sell, reason_diff_to_sell, rep),
+                   nest = TRUE)
+
+survey_diff_selling_prod %>% 
+  filter(!is.na(sell_to)) %>% 
+  group_by(sell_to) %>%  
+  summarize(pct = survey_prop())
+
+survey_diff_selling_prod %>%  
+  filter(!is.na(diff_to_sell)) %>% 
+  group_by(diff_to_sell) %>%  
+  summarize(diff_to_sell = survey_prop())
+
+survey_diff_selling_prod %>%  
+  filter(!is.na(diff_to_sell) & !is.na(sell_to)) %>% 
+  group_by(sell_to, diff_to_sell) %>%  
+  summarize(prop = survey_prop())
+
+x <- survey_diff_selling_prod %>%  
+  filter(!is.na(diff_to_sell) & !is.na(rep)) %>% 
+  group_by(adm1_name, reason_diff_to_sell, rep) %>% 
+  summarize(prop = round(survey_prop() * 100), 0) %>% 
+  select(-prop_se) %>% 
+  mutate(rep = fct_relevel(rep, "Non, pas choisi", after = Inf),
+         rep = case_when(
+           rep == 'Oui, 1er choix' ~ 'Yes, 1st choice',
+           rep == 'Oui, 2em choix' ~ 'Yes, 2nd choice',
+           rep == 'Non, pas choisi' ~ 'No, not chosen',
+           .default = 'Other'
+         ))
+
+# Datawrapper
+x <- survey_diff_selling_prod %>%  
+  filter(!is.na(diff_to_sell) & !is.na(rep)) %>% 
+  group_by(adm1_name, reason_diff_to_sell, rep) %>% 
+  summarize(prop = survey_prop() * 100) %>% 
+  select(-prop_se) %>% 
+  mutate(rep = fct_relevel(rep, "Non, pas choisi", after = Inf),
+         rep = case_when(
+           rep == 'Oui, 1er choix' ~ 'Yes, 1st choice',
+           rep == 'Oui, 2em choix' ~ 'Yes, 2nd choice',
+           rep == 'Oui, 3em choix' ~ 'Yes, 3rd choice',
+           rep == 'Non, pas choisi' ~ 'No, not chosen',
+           .default = 'Other'
+         )) %>% 
+  pivot_wider(names_from = rep, values_from = prop)
+
+write_csv(x, file = here('data', 'reason_diff_to_sell_adm1.csv'))
+
+
+
+
+
+
+s20_me <- s20_me_ner2018 %>%
+  select(grappe, menage, s20q13__1:s20q13__12) %>% 
+  left_join(ehcvm_welfare_ner2018 %>% select(grappe, menage, hhid), by = c('grappe', 'menage'))
+
+
 
 
 

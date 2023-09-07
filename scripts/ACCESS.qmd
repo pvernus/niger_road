@@ -1,0 +1,220 @@
+---
+title: "Enabling/Constraining factors: Access"
+format: html
+editor: visual
+---
+
+```{r grappe}
+
+load(here('data','grappes.RData'))
+
+```
+
+# Trade
+
+**source**: EHCVM 2018-2019
+
+```{r}
+
+# import survey data
+ehcvm_conso_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_conso_ner2018.dta'))
+ehcvm_welfare_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_welfare_ner2018.dta'))
+
+# prepare dataset
+ehcvm_conso_agg <- ehcvm_conso_ner2018 %>% 
+  select(hhid, vague, grappe, menage, codpr, depan) %>% 
+  mutate(depan_grains = sum( if_else(codpr %in% 1:11, depan, 0) ), 
+         depan_imp_rice = sum( if_else(codpr %in% 3:4, depan, 0) ),
+         sh_imp_rice = 100 * depan_imp_rice / depan_grains,
+         .by = hhid)
+
+# create var sh_imp_rice by grappe
+trade_by_grappe <- summarize(ehcvm_conso_agg, 
+                             sh_imp_rice = mean(sh_imp_rice, na.rm = T), .by = grappe)
+
+# merge
+trade <- merge(trade_by_grappe, grappe_sf, by = 'grappe')
+
+# save
+save(trade, file = here('data', 'trade.RData'))
+st_write(trade, here('layers', 'trade.gpkg'), delete_layer = TRUE)
+
+```
+
+# Food prices
+
+**source**: WFP
+
+```{r food_prices}
+
+# load wfp data
+set_rhdx_config(hdx_site = "prod") # from the rhdx package
+get_rhdx_config()
+
+search_datasets("Niger - Food Prices", rows = 5)
+
+ner_food_prices <- pull_dataset("wfp-food-prices-for-niger") %>%
+  get_resource(1) %>%
+  read_resource()
+
+# prepare the dataset
+food_prices <- ner_food_prices %>% 
+  mutate(year = floor_date(date, "year")) %>% 
+  filter(year >= '2010-01-01' & year < '2023-01-01') %>% 
+  mutate(season = case_when(
+    month(date) %in% c(12, 01:04) ~ 'dry',
+    month(date) %in% c(05:07) ~ 'wet',
+    .default = "other"
+    )) # based on IPC periods
+
+market_coverage <- food_prices %>% summarize(max = max(date), min = min(date), .by = "market")
+
+food_prices <- food_prices %>% 
+  filter(!market %in% c('Chetimari', 'Falwel', 'Dan-Goulbi', 'Chadakori', 
+                        'Kanembakache', 'Maidjirgui', 'Jataka', 'Bonfeba', 
+                        'Soubdou', 'Sassoumbroum', 'Guidimouni')) %>% # filter out markets with coverage <= 2010
+  filter(priceflag == 'actual') %>% 
+  filter(!commodity == 'Beans (niebe)') # coverage stops im 2014
+
+# create food_prices var by market
+food_price_by_market <- food_prices %>% 
+  select(-c(category, unit, currency, usdprice, year)) %>% 
+  filter(pricetype == 'Retail' & commodity %in% c('Maize', 'Millet', 'Sorghum')) %>%
+  group_by(month = floor_date(date, "month"), commodity) %>% 
+  mutate(mean_month = mean(price),
+         local_price_diff = 100 * price / mean_month) %>% 
+  ungroup() %>% 
+  summarize(food_prices_avg = mean(local_price_diff, na.rm = T), 
+            food_prices_med = median(local_price_diff, na.rm = T),
+            diff = food_prices_avg - food_prices_med,
+            .by = c(market, longitude, latitude)) %>% 
+  arrange(desc(diff)) %>% 
+  st_as_sf(coords = c("longitude", "latitude")) %>%
+  st_set_crs(4326)
+
+# join with grappe
+food_price_by_grappe <- st_join(grappe_sf, 
+                                    food_price_by_market, 
+                                    join = nngeo::st_nn, k = 3, progress = FALSE) %>% 
+  st_drop_geometry() %>% 
+  summarize(food_prices_avg = mean(food_prices_avg),
+            food_prices_med = mean(food_prices_med),
+            .by = grappe) %>% 
+  arrange(grappe)
+
+# merge
+food_price <- food_price_by_grappe %>% 
+  merge(grappe_sf, by = 'grappe') %>% 
+  st_as_sf()
+  
+# save
+save(food_price, file = here('data', 'food_price.RData'))
+st_write(food_price, here('layers', 'food_price.gpkg'), delete_layer = TRUE)
+
+```
+
+# Assets
+
+**source**: EHCVM 2018-2019
+
+```{r assets}
+
+# load survey data
+survey_welfare <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_welfare_ner2018.dta'))
+s17_me_agric <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's17_me_ner2018.dta'))
+
+s17_data <- s17_me_agric %>% 
+  select(grappe, menage, 
+         espece_code1 = s17q01,
+         espece_code2 = s17q02,
+         qte_livestock = s17q05) %>% 
+  mutate(espece_code1 = as_factor(espece_code1),
+         espece_code2 = as_factor(espece_code2))
+
+livestock <- left_join(survey_welfare %>%
+                         select(grappe, menage, hhid),
+                       s17_data,
+                       by = c("grappe", "menage")) %>%
+  mutate(
+    TLU = case_when(
+      espece_code2 == 'Bovins (boeufs)' ~ .5,
+      espece_code2 == 'Ovins (Moutons)' ~ .1,
+      espece_code2 == 'Caprins (Chèvres)' ~ .1,
+      espece_code2 == 'Camelins (Chameaux)' ~ .7,
+      espece_code2 == 'Equins (Chevaux)' ~ .5,
+      espece_code2 == 'Asins (Anes)' ~ .6,
+      espece_code2 == 'Porcins (Cochons)' ~ .2,
+      espece_code2 == 'Lapins' ~ .02,
+      espece_code2 == 'Poules / poulets' ~ .01,
+      espece_code2 == 'Pintades' ~ .01,
+      espece_code2 == 'Autres volailles' ~ .01
+    )
+  ) %>% 
+  mutate(tlu_grappe = sum(qte_livestock * TLU, na.rm = T), .by = grappe) %>% 
+  mutate(tlu_total = sum(qte_livestock * TLU, na.rm = T))
+         
+# create var sh_livestock by grappe
+livestock_by_grappe <- livestock %>%
+  reframe(sh_livestock = tlu_grappe / tlu_total, .by = grappe) %>% 
+  unique()
+  
+# merge
+livestock <- merge(livestock_by_grappe, grappe_sf, by = 'grappe')
+
+# save
+save(livestock, livestock_by_grappe, file = here('data', 'livestock.RData'))
+st_write(livestock, here('layers', 'livestock.gpkg'), delete_layer = TRUE)
+
+```
+
+| **Animal category**    | **TLU (Ahmed and Mesfin, 2017)** | **TLU (Rout, Kumar, and Behera, 2019)** |
+|:-----------------------|:---------------------------------|:----------------------------------------|
+| Calf                   | 0.25                             |                                         |
+| Donkey (young)         | 0.35                             |                                         |
+| Weaned Calf            | 0.34                             |                                         |
+| Camel                  | 1.25                             | 0.70                                    |
+| Heifer                 | 0.75                             |                                         |
+| Sheep and goat (adult) | 0.13                             | 0.10                                    |
+| Cow and ox             | 1.00                             | 0.50                                    |
+| Sheep and goat (young) | 0.06                             |                                         |
+| Horse                  | 1.10                             | 0.50                                    |
+| Chicken                | 0.013                            | 0.01                                    |
+| Donkey (adult)         | 0.70                             | 0.60                                    |
+| Rabbit                 |                                  | 0.02                                    |
+| Pig                    |                                  | 0.20                                    |
+
+: Source: (1) [The impact of agricultural cooperatives membership on the wellbeing of smallholder farmers: empirical evidence from eastern Ethiopia \| Agricultural and Food Economics \| Full Text (springeropen.com)](http://127.0.0.1:40547/#0){style="text-decoration: underline; color: rgb(137, 89, 168) !important;"}; (2) [Goat production challenges to food security. \| Goat production and supply chain management in the tropics (cabidigitallibrary.org)](http://127.0.0.1:40547/#0){style="text-decoration: underline; color: rgb(137, 89, 168) !important;"}
+
+# Income
+
+**source**: EHCVM 2018-2019
+
+```{r}
+
+# load survey data
+s20_me_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 's20_me_ner2018.dta'))
+survey_welfare <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_welfare_ner2018.dta'))
+
+# prepare dataset
+s20_data <- s20_me_ner2018 %>%
+  select(grappe, menage, relative_poverty = s20q02) %>% 
+  left_join(survey_welfare %>% select(grappe, menage, hhid), by = c('grappe', 'menage'))
+
+# create income var by grappe
+income_by_grappe <- s20_data %>% 
+  group_by(grappe, relative_poverty) %>% 
+  summarize(n = n()) %>% 
+  mutate(income = 100 * n / sum(n)) %>% 
+  filter(relative_poverty == 4) %>% 
+  ungroup()
+            
+# merge
+income <- left_join(grappe_sf, income_by_grappe, by = 'grappe') %>% 
+  select(-c(relative_poverty, n)) %>% 
+  mutate(income = replace_na(income, 0))
+
+# save
+save(income, file = here('data', 'income.RData'))
+st_write(income, here('layers', 'income.gpkg'), delete_layer = TRUE)
+
+```

@@ -1,7 +1,7 @@
 load(here('data','short_survey.RData'))
 load(here('data','grappes.RData'))
 
-s16a_me_agric <- read_dta('data_raw/ner_2018_ehcvm/s16a_me_ner2018.dta')
+s16a_me_agric <- read_dta('data_raw/ner_2018_ehcvm/s16a_me_ner2018.dta') # Section 16: Agriculture
 
 ### Households' food production ###
 

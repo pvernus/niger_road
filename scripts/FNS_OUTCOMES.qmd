@@ -1,0 +1,304 @@
+---
+title: "Food Nutritional Security outcomes"
+format: html
+editor: visual
+---
+
+```{r adm_boundaries}
+
+load(here("data","ner_adm.RData"))
+
+```
+
+# Outcomes
+
+## Potential
+
+```{r potential_cropland}
+
+# load raster
+rast_cropland_extent <- terra::rast(here('data_raw', 'rasters', 'croplands_2019.tif'))
+
+# 
+cropland_extent <- crop(rast_cropland_extent, ner_adm00, mask = T)
+plot(cropland_extent)
+
+adm02_sv <- vect(adm02)
+#--- extract values from the raster for each county ---#
+cropland_extent_by_departement <- 
+  terra::extract(
+    cropland_extent, 
+    adm02_sv
+  )
+
+sum_cropland <- 
+cropland_extent_by_departement %>% 
+  group_by(ID) %>% 
+  summarize(cropland = sum(croplands_2019, na.rm = T)^(1/4))
+
+cropland_extent_adm02 <- 
+  #--- back to sf ---#
+  st_as_sf(adm02_sv) %>% 
+  #--- define ID ---#
+  mutate(ID := seq_len(nrow(.))) %>% 
+  #--- merge by ID ---#
+  left_join(., sum_cropland, by = "ID")
+
+tm_shape(cropland_extent_adm02) +
+  tm_fill(col = 'cropland')
+
+```
+
+## Availability
+
+```{r availability_food_production}
+
+load(here('data', 'ner_adm.RData'))
+load(here('data', 'ner_adm02_pop.RData'))
+load(here('data','grappes.RData'))
+
+rast_food_prod_kcal <- terra::rast(here('data_raw', 'rasters', 'GlbFoodkcal.tiff'))
+plot(rast_food_prod_kcal)
+
+# crop
+food_prod_kcal <- crop(rast_food_prod_kcal, ner_adm00, mask = T)
+plot(food_prod_kcal)
+
+ner_adm02_sv <- vect(ner_adm02)
+#--- extract values from the raster for each county ---#
+food_prod_kcal_by_departement <- 
+  terra::extract(
+    food_prod_kcal, 
+    ner_adm02_sv
+  )
+
+sum_food_prod_kcal <- 
+food_prod_kcal_by_departement %>% 
+  group_by(ID) %>% 
+  summarize(food_prod_kcal_total = sum(GlbFoodkcal, na.rm = T))
+
+food_prod_kcal_adm02 <- 
+  #--- back to sf ---#
+  st_as_sf(ner_adm02_sv) %>% 
+  #--- define ID ---#
+  mutate(ID := seq_len(nrow(.))) %>% 
+  #--- merge by ID ---#
+  left_join(., sum_food_prod_kcal, by = "ID")
+
+food_prod_per_capita_adm02 <- left_join(food_prod_kcal_adm02 %>% 
+                                          rename(id_adm2 = rowcacode2), 
+          pop_adm02_sf %>% st_drop_geometry() %>% 
+            select(id_adm2, population_total = t_tl), by = 'id_adm2') %>% 
+  mutate(food_prod_per_capita = (food_prod_kcal_total / population_total)^(1/4)) %>% 
+  mutate(food_prod_per_capita = na_if(food_prod_per_capita, 0))
+
+tm_shape(food_prod_per_capita_adm02) +
+  tm_fill(col = 'food_prod_per_capita')
+
+```
+
+## Access
+
+```{r access_food_consumption}
+
+load(here('data', 'short_survey.RData'))
+
+food_consumption <- survey_welfare %>% 
+  select(grappe, hhid, region, milieu, hhweight, id_adm2, eqadu1, dali, pcexp, def_spa, def_temp) %>% 
+  mutate(dali_per_capita = dali / (eqadu1*def_spa*def_temp))
+
+survey_food_consumption <- food_consumption %>% 
+    as_survey_design(ids = c(grappe,hhid), 
+                   strata = c(region, milieu), 
+                   weights = hhweight,
+                   variables = c(hhid, id_adm2, dali_per_capita, pcexp),
+                   nest = TRUE)
+
+food_consumption_per_capita_adm02 <- survey_food_consumption %>% 
+  group_by(id_adm2) %>% 
+  summarize(food_consumption_per_capita = survey_mean(dali_per_capita, na.rm = T),
+            consumption_per_capita = survey_mean(pcexp, na.rm = T))
+
+```
+
+## Utilization
+
+```{r}
+
+load(here('data', 'ipc_sf.RData'))
+
+malnutrition <- ipc %>% 
+  select(id_adm2, adm2_name, adm2_pcod2, exercise_year, chtype, population, phase35) %>% 
+  filter(exercise_year >= 2018 & chtype == 'current') %>% 
+  mutate(malnutrition = round(100 * (phase35/population), 2)) %>% 
+  summarize(malnutrition = median(malnutrition),
+            .by = id_adm2)
+  
+# merge
+malnutrition_adm02 <- left_join(malnutrition %>% select(id_adm2, malnutrition), adm02, by = 'id_adm2')
+
+```
+
+# Efficiency scores
+
+## Data
+
+```{r}
+
+load(here('data', 'short_survey.RData'))
+
+short_survey <- survey_welfare %>% 
+  select(grappe, hhid, region, milieu, hhweight, id_adm2, eqadu1, hhsize) %>% 
+  group_by(id_adm2) %>% 
+  summarize(pop = sum(hhsize * hhweight, na.rm = T))
+```
+
+```{r}
+
+save(cropland_extent_adm02, food_prod_per_capita_adm02, 
+     food_consumption_per_capita_adm02, malnutrition_adm02, 
+     file = here('data', 'fcs_coutcomes.RData'))
+
+data <- left_join(cropland_extent_adm02 %>% 
+            select(adm_02, id_adm2, cropland),
+          food_prod_per_capita_adm02 %>% st_drop_geometry() %>% 
+            select(id_adm2, food_prod_per_capita),
+          by = 'id_adm2') %>% 
+left_join(food_consumption_per_capita_adm02,
+          by = 'id_adm2') %>% 
+left_join(malnutrition_adm02 %>% select(id_adm2, malnutrition),
+          by = 'id_adm2') %>% 
+left_join(short_survey, by = 'id_adm2')
+
+```
+
+## Availability efficiency score
+
+```{r}
+
+model <- lm(food_prod_per_capita ~ 0 + cropland, data = data, weights = pop,
+            na.action=na.exclude)  # Fit population weighted linear model
+
+plot(food_prod_per_capita ~ cropland,
+     data = data,
+     main = "Availability efficiency score",
+     xlab = "Cropland extent",
+     ylab = "Food production per capita")
+abline(model, col = "red")  # Add regression line
+abline(a = 0, b = .75 * 1.74269, col = 'orange', lty = 'dotted')
+abline(a = 0, b = 1.25 * 1.74269, col = 'orange', lty = 'dotted')
+
+summary(model) # slope = 1.74269
+summary(model)$r.squared
+
+# score = observed value - fitted value (slop * observed value) * buffer (75/125)
+availability_efficiency <- availability_efficiency %>% 
+    mutate(score = factor(case_when(
+    food_prod_per_capita < 1.74269 * cropland * .75 ~ 'Low', 
+    food_prod_per_capita >= cropland * (.75 * 1.74269) & 
+    food_prod_per_capita < cropland * (1.25 * 1.74269) ~ 'Medium',
+    food_prod_per_capita >= cropland * (1.25 * 1.74269) ~ 'High'), 
+    levels = c("High", "Medium", "Low")))
+
+tm_shape(availability_efficiency) +
+  tm_fill(col = 'score', 
+          colorNA = 'white',
+          palette = c('High' = '#ffff99', 'Medium' = '#ffa64d', 'Low' = "#ff4d4d"),
+          title = "Availability score") +
+  tm_shape(adm02) +
+  tm_borders()
+
+```
+
+## Access efficiency score
+
+```{r}
+
+model <- lm(food_consumption_per_capita ~ 0 + food_prod_per_capita, 
+            data = data, 
+            weights = pop,
+            na.action=na.exclude)  # Fit linear model
+
+plot(food_consumption_per_capita ~ food_prod_per_capita,
+     data = data,
+     main = "Access efficiency score",
+     xlab = "Food production per capita",
+     ylab = "Food consumption per capita")
+abline(model, col = "red")  # Add regression line
+abline(a = 0, b = .75 * 10256.7, col = 'orange', lty = 'dotted')
+abline(a = 0, b = 1.25 * 10256.7, col = 'orange', lty = 'dotted')
+
+summary(model) # estimate = 10256.7
+summary(model)$r.squared
+
+# score = observed value - fitted value (slop * observed value) * buffer (75/125)
+acess_efficiency <- data %>% 
+    mutate(score = factor(case_when(
+    food_consumption_per_capita < 10256.7 * food_prod_per_capita * .75 ~ 'Low', 
+    food_consumption_per_capita >= food_prod_per_capita * (.75 * 10256.7) & 
+    food_consumption_per_capita < food_prod_per_capita * (1.25 * 10256.7) ~ 'Medium',
+    food_consumption_per_capita >= food_prod_per_capita * (1.25 * 10256.7) ~ 'High'), 
+    levels = c("High", "Medium", "Low")))
+
+tm_shape(acess_efficiency) +
+  tm_fill(col = 'score', 
+          colorNA = 'white',
+          palette = c('High' = '#ffff99', 'Medium' = '#ffa64d', 'Low' = "#ff4d4d"),
+          title = "Access score") +
+  tm_shape(adm02) +
+  tm_borders()
+
+
+```
+
+## Utilization efficiency score
+
+```{r}
+
+model <- lm(malnutrition ~ 0 + food_consumption_per_capita, 
+            data = data, 
+            weights = pop,
+            na.action=na.exclude)  # Fit linear model
+
+plot(malnutrition ~ food_consumption_per_capita,
+     data = data,
+     main = "Utilization efficiency score",
+     xlab = "Food consumption per capita",
+     ylab = "Malnutrition incidence")
+abline(model, col = "red")  # Add regression line
+abline(a = 0, b = .75 * 2.096e-05, col = 'orange', lty = 'dotted')
+abline(a = 0, b = 1.25 * 2.096e-05, col = 'orange', lty = 'dotted')
+
+summary(model) # estimate = 2.096e-05
+summary(model)$r.squared
+
+# score = observed value - fitted value (slop * observed value) * buffer (75/125)
+utilization_efficiency <- data %>% 
+    mutate(score = factor(case_when(
+    malnutrition < 2.096e-05 * food_consumption_per_capita * .75 ~ 'High', 
+    malnutrition >= food_consumption_per_capita * (.75 * 2.096e-05) & 
+    malnutrition < food_consumption_per_capita * (1.25 * 2.096e-05) ~ 'Medium',
+    malnutrition >= food_consumption_per_capita * (1.25 * 2.096e-05) ~ 'Low'), 
+    levels = c("High", "Medium", "Low")))
+
+tm_shape(utilization_efficiency) +
+  tm_fill(col = 'score', 
+          colorNA = 'white',
+          palette = c('High' = '#ffff99', 'Medium' = '#ffa64d', 'Low' = "#ff4d4d"),
+          title = "Utilization score") +
+  tm_shape(adm02) +
+  tm_borders()
+
+```
+
+```{r}
+
+efficiency_score <- left_join(availability_efficiency, 
+          access_efficiency %>% st_drop_geometry() %>% 
+            select(id_adm2, access_efficiency), 
+          by = "id_adm2") %>% 
+  left_join(utilization_efficiency %>% st_drop_geometry() %>% 
+            select(id_adm2, utilization_efficiency), 
+          by = "id_adm2")
+
+```

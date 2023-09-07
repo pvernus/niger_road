@@ -1,0 +1,184 @@
+---
+title: "Enabling/Constraining factors: Transversal"
+format: html
+editor: visual
+---
+
+```{r grappe}
+
+load(here('data','grappes.RData'))
+
+```
+
+# Transport costs
+
+**source**: EHCVM 2018-2019
+
+```{r transport_cost}
+
+# import survey data
+ehcvm_conso_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_conso_ner2018.dta'))
+ehcvm_welfare_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_welfare_ner2018.dta'))
+
+# prepare dataset
+ehcvm_conso_agg <- ehcvm_conso_ner2018 %>% 
+  select(hhid, vague, grappe, menage, codpr, depan)
+
+ehcvm_welfare <- ehcvm_welfare_ner2018 %>% 
+  select(hhid, dnal)
+
+ehcvm_conso <- left_join(ehcvm_conso_agg, ehcvm_welfare, by = 'hhid')
+
+transport_cost_by_grappe <- ehcvm_conso %>% 
+  mutate(codpr_transport = if_else(
+    codpr %in% c(210:215, 405:407, 629), 1, 0)) %>%
+  filter(codpr_transport == 1) %>% 
+  mutate(deptransp_pct = 100 * depan/dnal) %>% 
+  summarize(sh_transport_cost = mean(deptransp_pct, na.rm = T), .by = grappe)
+
+# merge
+transport_cost <- left_join(grappe_sf, transport_cost_by_grappe, by = 'grappe') %>% 
+  mutate(sh_transport_cost = replace_na(sh_transport_cost, 0))
+
+# save
+save(transport_cost, file = here('data', 'transport_cost.RData'))
+st_write(transport_cost, here('layers', 'transport_cost.gpkg'), delete_layer = TRUE)
+
+```
+
+# Market access
+
+**source**: OSM
+
+```{r market_access}
+
+# extract data from osm
+osm_marketplace <- opq(bbox = c(-0.549316,10.703792,16.589355,24.086589), # source: http://bboxfinder.com/
+                       timeout = 100) %>% 
+  add_osm_feature(key = 'amenity', value = 'marketplace') %>% 
+  osmdata_sf()
+
+# prepare dataset
+marketplace_points <- osm_marketplace$osm_points %>%
+  select(osm_id, name, amenity)
+
+# length(marketplace_points$osm_id)
+
+# aggregate by buffer
+marketplace_buffer <- st_join(grappe_buffer, marketplace_points) %>% 
+  summarize(freq_market_access = length(osm_id), .by = grappe) %>% 
+  st_drop_geometry()
+
+# merge
+marketplace <- merge(grappe_sf, marketplace_buffer, by = 'grappe') %>% 
+  mutate(sh_market_access = 100 * freq_market_access / 3466)
+  
+# save
+save(osm_marketplace, marketplace_buffer, marketplace,
+     file = here('data', 'marketplace.RData'))
+st_write(marketplace, here('layers', 'marketplace.gpkg'), delete_layer = TRUE)
+
+```
+
+# Violent conflicts
+
+**source**: Acled
+
+```{r conflicts}
+
+load(here('data', 'ner_adm.RData'))
+
+# load acled data
+acled <- read_csv(here('data_raw', 'acled', 'acled_export_tool.csv')) %>% 
+  filter(region == 'Western Africa') %>% 
+  mutate(event_date = lubridate::dmy(event_date))
+
+# prepare the dataset
+conflicts_sf <- st_as_sf(x = acled,                         
+                                 coords = c("longitude", "latitude"),
+                                 crs = "EPSG:4326")
+
+# create vars for total fatalities and events
+conflicts_sf <- conflicts_sf %>%
+  select(event_id_cnty, fatalities) %>% 
+  mutate(fatalities_total = sum(fatalities),
+         freq_vio_events_total = length(event_id_cnty))
+
+# create var for relative fatalities and events by buffer
+conflicts_by_buffer <- st_join(grappe_buffer, conflicts_sf) %>% 
+  st_drop_geometry() %>% 
+  reframe(sh_fatalities = 100 * sum(fatalities, na.rm = T) / fatalities_total, 
+          sh_freq_vio_events = 100 * length(event_id_cnty) / freq_vio_events_total,
+          .by = 'grappe') %>% 
+  replace_na(list(fatalities = 0, freq_vio_events = 0)) %>% 
+  distinct()
+  
+# merge  
+conflicts <- merge(conflicts_by_buffer, grappe_sf, by = 'grappe') %>% 
+  mutate(sh_fatalities = replace_na(sh_fatalities, 0),
+         sh_freq_vio_events = replace_na(sh_freq_vio_events, 0))
+
+#save
+save(conflicts, file = here('data', 'conflicts.RData'))
+st_write(conflicts, here('layers', 'conflicts.gpkg'), delete_layer = TRUE)
+st_write(acled, here('data', 'acled.gpkg'), delete_layer = TRUE)
+
+```
+
+# ICT
+
+**source**: EHCVM 2018-2019
+
+```{r ict}
+
+# load survey data
+ehcvm_individu_ner2018 <- read_dta(here('data_raw', 'ner_2018_ehcvm', 'ehcvm_individu_ner2018.dta'))
+
+# prepare dataset
+ind_data <- ehcvm_individu_ner2018 %>% 
+  select(hhid, grappe, menage, numind, age, telpor) %>% 
+  filter(age %in% c(15:64)) # working-age population
+
+mobile_phone_by_grappe <- ind_data %>% 
+  mutate(ind_total = length(numind),
+         sh_mobile_phone = 100 * sum(telpor) / ind_total,
+         .by = grappe) %>% 
+  select(grappe, sh_mobile_phone) %>% 
+  unique()
+
+# merge
+ict <- merge(grappe_sf, mobile_phone_by_grappe, by = 'grappe')
+
+# save
+save(ict, file = here('data', 'ict.RData'))
+st_write(ict, here('layers', 'ict.gpkg'), delete_layer = TRUE)
+
+```
+
+# TRANSVERSAL
+
+```{r}
+
+load(here('data', 'transport_cost.RData'))
+load(here('data', 'marketplace.RData'))
+load(here('data', 'conflicts.RData'))
+load(here('data', 'ict.RData'))
+
+transversal <- left_join(transport_cost %>% 
+                           select(grappe, sh_transport_cost),
+                         marketplace %>% st_drop_geometry() %>% 
+                           select(grappe, sh_market_access),
+                         by = 'grappe') %>% 
+  left_join(conflicts %>% st_drop_geometry() %>% 
+              select(grappe, sh_fatalities, sh_freq_vio_events),
+            by = 'grappe') %>% 
+  left_join(ict %>% st_drop_geometry() %>% 
+              select(grappe, sh_mobile_phone), 
+            by = 'grappe')
+
+save(transversal, file = here('data', 'transversal.RData'))
+
+vis_miss(transversal)
+```
+
+#### 
